@@ -2,26 +2,27 @@
 
 namespace Database\Seeders;
 
+use App\Models\User;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 
+/**
+ * Seeder akun operator CrowdEase.
+ *
+ * Membuat satu akun operator default untuk login ke dasbor.
+ * Password di-hash otomatis oleh cast 'hashed' pada model User.
+ */
 class UserSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        DB::table('users')->insert([
+        User::firstOrCreate(
+            ['email' => 'operator@crowdease.test'],
             [
-                'name' => 'Admin',
-                'email' => 'operator@crowdease.test',
-                'email_verified_at' => now(),
-                'password' => Hash::make('secret123'),
-                'created_at' => now(),
-                'updated_at' => now(),
+                'name'     => 'Operator CrowdEase',
+                'password' => 'secret123', // otomatis di-hash oleh cast 'hashed'
             ]
-        ]);
+        );
+
+        $this->command->info('Akun operator siap: operator@crowdease.test / secret123');
     }
 }

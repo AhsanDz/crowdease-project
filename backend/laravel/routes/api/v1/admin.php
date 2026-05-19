@@ -1,45 +1,33 @@
 <?php
 
+use App\Support\ApiResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\V1\Admin\AuthController;
-use App\Http\Controllers\Api\V1\Admin\DashboardController;
-use App\Http\Controllers\Api\V1\Admin\RouteController;
-use App\Http\Controllers\Api\V1\Admin\StopController;
-use App\Http\Controllers\Api\V1\Admin\VehicleController;
-use App\Http\Controllers\Api\V1\Admin\ApiKeyController;
-use App\Http\Controllers\Api\V1\Admin\WebhookController;
 
-// Semua operator bisa akses
-Route::middleware(['auth:sanctum', 'role'])->group(function () {
+/*
+|--------------------------------------------------------------------------
+| Route Operator
+|--------------------------------------------------------------------------
+|
+| Endpoint untuk dasbor operator. Wajib bearer token Sanctum dan
+| dibatasi rate limiter 'operator' (120 request/menit per user).
+|
+| Endpoint login, dashboard, dan CRUD master data akan ditambahkan
+| pada langkah berikutnya.
+|
+*/
 
-    // Auth
-    Route::post('auth/login', [AuthController::class, 'login'])->withoutMiddleware(['auth:sanctum', 'role']);
-    Route::post('auth/logout', [AuthController::class, 'logout']);
-    Route::get('auth/me', [AuthController::class, 'me']);
+Route::middleware(['auth:sanctum', 'throttle:operator'])->group(function () {
 
-    // Dashboard
-    Route::get('dashboard/summary', [DashboardController::class, 'summary']);
-    Route::get('dashboard/hourly', [DashboardController::class, 'hourly']);
+    // Info user yang sedang login — verifikasi bearer token bekerja.
+    // GET /api/v1/me
+    Route::get('/me', function (Request $request) {
+        $user = $request->user();
 
-    // Resources
-    Route::apiResource('routes', RouteController::class);
-    Route::apiResource('routes.stops', StopController::class)->except('show');
-    Route::apiResource('vehicles', VehicleController::class);
-
-    // API Keys — hanya admin
-    Route::middleware('role:admin')->group(function () {
-        Route::apiResource('api-keys', ApiKeyController::class)->only(['index', 'store', 'destroy']);
+        return ApiResponse::success([
+            'id'    => $user->id,
+            'name'  => $user->name,
+            'email' => $user->email,
+        ]);
     });
-
-    // Webhooks
-    Route::apiResource('webhooks', WebhookController::class);
-    Route::post('webhooks/{webhook}/test', [WebhookController::class, 'test']);
-    Route::get('webhooks/{webhook}/deliveries', [WebhookController::class, 'deliveries']);
 });
-
-// Hanya admin
-Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
-    // Tambahkan route hanya untuk admin di sini...
-});
-

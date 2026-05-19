@@ -3,56 +3,71 @@
 namespace App\Http\Middleware;
 
 use App\Models\ApiKey;
+use App\Support\ApiResponse;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * ApiKeyAuth Middleware
+ * Middleware autentikasi untuk perangkat IoT (titik integrasi TI-1).
  *
- * Memvalidasi X-API-Key header yang dikirim oleh IoT Simulator.
+ * Memvalidasi header X-API-Key terhadap tabel api_keys. Dipakai pada
+ * endpoint /api/v1/sensors/* yang menerima data dari IoT simulator.
  *
  * Cara kerja:
- *  1. Operator generate API key via dasbor admin (POST /admin/api-keys)
- *  2. ApiKey::generate() menyimpan hash-nya ke DB dan mengembalikan plain key sekali
- *  3. Plain key di-paste ke konfigurasi IoT Simulator
- *  4. Setiap request dari simulator menyertakan: X-API-Key: ce_iot_xxxxx
- *  5. Middleware ini ambil key dari header, cari prefix-nya di DB, lalu verify hash-nya
+ * 1. Ambil nilai header X-API-Key dari request.
+ * 2. Hitung hash SHA-256 dari key tersebut.
+ * 3. Cari baris api_keys yang key_hash-nya cocok DAN belum dicabut.
+ * 4. Jika tidak ada, tolak dengan 401. Jika ada, lanjutkan request.
  *
- * Dipasang di routes/api/v1/iot.php
+ * Mengapa SHA-256, bukan bcrypt:
+ * - Kolom key_hash bertipe char(64) = panjang persis hex digest SHA-256.
+ * - API key perlu DICARI berdasarkan hash-nya (terima key -> hash -> lookup).
+ * - SHA-256 bersifat deterministik sehingga lookup via index berjalan O(1).
+ * - bcrypt menghasilkan hash berbeda tiap kali (bersalt), tidak bisa di-lookup.
+ * - API key di-generate acak dengan entropi tinggi, jadi hash cepat aman.
+ *   (bcrypt hanya perlu untuk PASSWORD yang entropinya rendah.)
  */
 class ApiKeyAuth
 {
+    /**
+     * Tangani request yang masuk.
+     */
     public function handle(Request $request, Closure $next): Response
     {
-        $plainKey = $request->header('X-API-Key');
+        $providedKey = $request->header('X-API-Key');
 
-        // Header tidak ada atau kosong
-        if (empty($plainKey)) {
-            return response()->json([
-                'message' => 'API key missing. Provide X-API-Key header.',
-            ], Response::HTTP_UNAUTHORIZED);
+        if (empty($providedKey)) {
+            return ApiResponse::error(
+                'UNAUTHORIZED',
+                'Header X-API-Key wajib disertakan.',
+                null,
+                401
+            );
         }
 
-        // Cari kandidat key berdasarkan prefix (14 char pertama)
-        // Tujuannya agar tidak harus hash semua key aktif di DB — cukup filter dulu by prefix
-        $prefix = substr($plainKey, 0, 14);
+        $hash = hash('sha256', $providedKey);
 
-        $apiKey = ApiKey::where('is_active', true)
-            ->where('key_prefix', $prefix)
+        $apiKey = ApiKey::query()
+            ->where('key_hash', $hash)
+            ->whereNull('revoked_at')
             ->first();
 
-        // Prefix tidak ditemukan atau hash tidak cocok
-        if (! $apiKey || ! $apiKey->verify($plainKey)) {
-            return response()->json([
-                'message' => 'Invalid or inactive API key.',
-            ], Response::HTTP_UNAUTHORIZED);
+        if ($apiKey === null) {
+            return ApiResponse::error(
+                'UNAUTHORIZED',
+                'API key tidak valid atau sudah dicabut.',
+                null,
+                401
+            );
         }
 
-        // Catat waktu terakhir dipakai (non-blocking)
-        $apiKey->touchLastUsed();
+        // Catat waktu pemakaian terakhir untuk audit.
+        $apiKey->last_used_at = now();
+        $apiKey->save();
 
-        // Inject ke request agar controller bisa akses jika perlu
+        // Sediakan objek ApiKey ke controller lewat request attributes,
+        // sehingga controller bisa tahu key mana yang dipakai bila perlu.
         $request->attributes->set('api_key', $apiKey);
 
         return $next($request);
