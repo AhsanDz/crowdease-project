@@ -2,64 +2,69 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
-use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
-use App\Models\ApiKey;
-use Illuminate\Testing\Fluent\Concerns\Has;
 
 /**
- * Model User
+ * Operator sistem CrowdEase.
  *
- * Operator yang mengakses dasbor admin via Sanctum bearer token.
+ * Operator login dengan email + password, lalu menerima bearer token
+ * dari Laravel Sanctum untuk mengakses endpoint /api/v1/admin/*.
  *
- * @property int         $id
- * @property string      $name
- * @property string      $email
- * @property string      $password
- * @property string      $role        admin | operator
- * @property \Carbon\Carbon|null $email_verified_at
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
+ * @property int    $id
+ * @property string $name
+ * @property string $email
+ * @property string $password
  */
 class User extends Authenticatable
 {
-    use HasApiTokens, Notifiable, HasFactory;
+    /** @use HasFactory<\Database\Factories\UserFactory> */
+    use HasApiTokens, HasFactory, Notifiable;
 
+    /**
+     * Atribut yang boleh diisi secara mass-assignment.
+     *
+     * @var list<string>
+     */
     protected $fillable = [
         'name',
         'email',
         'password',
-        'role',
     ];
 
+    /**
+     * Atribut yang disembunyikan saat model di-serialize ke array/JSON.
+     *
+     * @var list<string>
+     */
     protected $hidden = [
         'password',
         'remember_token',
     ];
 
-    protected $casts = [
-        'email_verified_at' => 'datetime',
-        'password'          => 'hashed',
-    ];
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Relationships
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function apiKeys(): HasMany
+    /**
+     * Casting tipe atribut.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
     {
-        return $this->hasMany(ApiKey::class, 'created_by');
+        return [
+            'email_verified_at' => 'datetime',
+            'password'          => 'hashed',
+        ];
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Helpers
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function isAdmin(): bool
+    /**
+     * API key yang dibuat oleh operator ini untuk perangkat IoT.
+     *
+     * @return HasMany<ApiKey, $this>
+     */
+    public function apiKeys(): HasMany
     {
-        return $this->role === 'admin';
+        return $this->hasMany(ApiKey::class);
     }
 }

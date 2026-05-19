@@ -2,114 +2,97 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Str;
 
 /**
- * Model ApiKey
+ * API key untuk autentikasi perangkat IoT (TI-1).
  *
- * API key untuk autentikasi IoT Simulator via header X-API-Key.
- * Key asli hanya muncul sekali saat dibuat — yang disimpan di DB adalah hash-nya.
+ * Key disimpan dalam bentuk hash (kolom key_hash). Nilai asli hanya
+ * ditampilkan satu kali saat dibuat. Validasi key dilakukan oleh
+ * middleware ApiKeyAuth dengan membandingkan hash.
+ *
+ * Catatan: tabel api_keys tidak punya kolom created_at/updated_at,
+ * sehingga $timestamps di-set false. Jika ingin menampilkan tanggal
+ * pembuatan di dashboard, tambah $table->timestamps() pada migrasi
+ * lalu hapus baris $timestamps = false di bawah.
  *
  * @property int         $id
- * @property string      $name           Label key (mis: "Simulator Lab A")
- * @property string      $key_hash       Hash bcrypt dari key asli
- * @property string      $key_prefix     8 char pertama key asli (untuk identifikasi di list)
- * @property int         $created_by     User operator yang membuat
- * @property bool        $is_active
- * @property \Carbon\Carbon|null $last_used_at
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
+ * @property int         $user_id
+ * @property string      $name
+ * @property string      $key_hash
+ * @property \Illuminate\Support\Carbon|null $last_used_at
+ * @property \Illuminate\Support\Carbon|null $revoked_at
  */
 class ApiKey extends Model
 {
-    protected $table = 'api_keys';
+    /**
+     * Tabel ini tidak memiliki kolom timestamp.
+     */
+    public $timestamps = false;
 
+    /**
+     * Atribut yang boleh diisi secara mass-assignment.
+     *
+     * @var list<string>
+     */
     protected $fillable = [
+        'user_id',
         'name',
         'key_hash',
-        'key_prefix',
-        'created_by',
-        'is_active',
         'last_used_at',
+        'revoked_at',
     ];
 
+    /**
+     * Atribut yang disembunyikan saat di-serialize.
+     *
+     * @var list<string>
+     */
     protected $hidden = [
         'key_hash',
     ];
 
-    protected $casts = [
-        'is_active'    => 'boolean',
-        'last_used_at' => 'datetime',
-    ];
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Static factory
-    // ──────────────────────────────────────────────────────────────────────
-
     /**
-     * Generate key baru, buat record, kembalikan plain key (hanya sekali).
+     * Casting tipe atribut.
      *
-     * @param  string  $name
-     * @param  int     $createdBy  User ID operator
-     * @return array   ['model' => ApiKey, 'plain_key' => string]
+     * @return array<string, string>
      */
-    public static function generate(string $name, int $createdBy): array
+    protected function casts(): array
     {
-        $plainKey = 'ce_iot_' . Str::random(32);
-
-        $model = static::create([
-            'name'       => $name,
-            'key_hash'   => Hash::make($plainKey),
-            'key_prefix' => substr($plainKey, 0, 14), // "ce_iot_" + 7 char
-            'created_by' => $createdBy,
-            'is_active'  => true,
-        ]);
-
         return [
-            'model'     => $model,
-            'plain_key' => $plainKey,
+            'last_used_at' => 'datetime',
+            'revoked_at'   => 'datetime',
         ];
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Relationships
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function creator(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'created_by');
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Helpers
-    // ──────────────────────────────────────────────────────────────────────
-
     /**
-     * Verifikasi apakah plain key cocok dengan hash yang tersimpan.
-     * Dipanggil dari middleware ApiKeyAuth.
+     * Operator yang membuat API key ini.
+     *
+     * @return BelongsTo<User, $this>
      */
-    public function verify(string $plainKey): bool
+    public function user(): BelongsTo
     {
-        return $this->is_active && Hash::check($plainKey, $this->key_hash);
+        return $this->belongsTo(User::class);
     }
 
     /**
-     * Catat waktu terakhir key ini dipakai.
+     * Apakah API key masih aktif (belum dicabut).
      */
-    public function touchLastUsed(): void
+    public function isActive(): bool
     {
-        $this->update(['last_used_at' => now()]);
+        return $this->revoked_at === null;
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Scopes
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function scopeActive($query)
+    /**
+     * Scope: hanya API key yang belum dicabut.
+     *
+     * @param  Builder<ApiKey>  $query
+     * @return Builder<ApiKey>
+     */
+    public function scopeActive(Builder $query): Builder
     {
-        return $query->where('is_active', true);
+        return $query->whereNull('revoked_at');
     }
 }

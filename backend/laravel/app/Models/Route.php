@@ -2,87 +2,78 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Model Route
+ * Koridor TransJakarta (mis. K1: Blok M - Kota).
  *
- * Koridor TransJakarta (K1, K2, dst).
- * Satu koridor punya banyak halte (stops) dan banyak bus (vehicles).
+ * CATATAN PENTING: nama model ini sama dengan facade
+ * Illuminate\Support\Facades\Route. Di file yang memakai keduanya
+ * (jarang terjadi di controller), gunakan alias saat import, mis:
+ *   use App\Models\Route as BusRoute;
  *
- * @property int         $id
- * @property string      $code         Kode koridor: K1, K2, K3, ...
- * @property string      $name         Nama lengkap koridor
- * @property bool        $is_active
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
- * @property \Carbon\Carbon|null $deleted_at
+ * @property int    $id
+ * @property string $code
+ * @property string $name
+ * @property string $color
+ * @property bool   $is_active
  */
 class Route extends Model
 {
-    use SoftDeletes;
-
-    protected $table = 'routes';
-
+    /**
+     * Atribut yang boleh diisi secara mass-assignment.
+     *
+     * @var list<string>
+     */
     protected $fillable = [
         'code',
         'name',
+        'color',
         'is_active',
     ];
 
-    protected $casts = [
-        'is_active' => 'boolean',
-    ];
+    /**
+     * Casting tipe atribut.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'is_active' => 'boolean',
+        ];
+    }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Relationships
-    // ──────────────────────────────────────────────────────────────────────
-
+    /**
+     * Halte-halte pada koridor ini, terurut sesuai sequence.
+     *
+     * @return HasMany<Stop, $this>
+     */
     public function stops(): HasMany
     {
         return $this->hasMany(Stop::class)->orderBy('sequence');
     }
 
+    /**
+     * Armada bus yang beroperasi di koridor ini.
+     *
+     * @return HasMany<Vehicle, $this>
+     */
     public function vehicles(): HasMany
     {
         return $this->hasMany(Vehicle::class);
     }
 
-    public function activeVehicles(): HasMany
-    {
-        return $this->hasMany(Vehicle::class)->where('is_active', true);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Scopes
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function scopeActive($query)
+    /**
+     * Scope: hanya koridor yang aktif.
+     *
+     * @param  Builder<Route>  $query
+     * @return Builder<Route>
+     */
+    public function scopeActive(Builder $query): Builder
     {
         return $query->where('is_active', true);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Accessors
-    // ──────────────────────────────────────────────────────────────────────
-
-    /**
-     * Rata-rata occupancy ratio semua bus aktif di koridor ini.
-     * Berguna untuk dasbor operator (ringkasan per koridor).
-     */
-    public function getAvgOccupancyRatioAttribute(): ?float
-    {
-        $vehicles = $this->activeVehicles()->with('latestDensityLog')->get();
-
-        $ratios = $vehicles
-            ->filter(fn ($v) => $v->latestDensityLog !== null)
-            ->map(fn ($v) => $v->current_occupancy_ratio)
-            ->filter();
-
-        return $ratios->isNotEmpty()
-            ? round($ratios->avg(), 4)
-            : null;
     }
 }

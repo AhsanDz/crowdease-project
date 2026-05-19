@@ -2,154 +2,128 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * Model DensityLog
+ * Pencatatan kepadatan kendaraan dari perangkat IoT (TI-1).
  *
- * Catatan kepadatan bus dari sensor IoT.
- * Setiap POST /sensors/readings dari simulator menghasilkan satu record di sini.
+ * Setiap baris adalah satu pembacaan sensor: jumlah penumpang
+ * pada waktu tertentu. Bersifat immutable (write-once) — sebuah
+ * pencatatan tidak pernah diubah setelah dibuat, sehingga tabel
+ * hanya punya kolom created_at (tanpa updated_at).
  *
- * @property int         $id
- * @property int         $vehicle_id
- * @property int         $passenger_count     Jumlah penumpang saat reading
- * @property int         $capacity_at_time    Kapasitas bus saat reading
- * @property float       $occupancy_ratio     passenger_count / capacity_at_time
- * @property string      $occupancy_level     low | medium | high | overcrowded
- * @property \Carbon\Carbon $recorded_at      Waktu dari sensor (bisa beda dengan created_at)
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
+ * @property int    $id
+ * @property int    $vehicle_id
+ * @property int    $passenger_count
+ * @property int    $capacity_at_time
+ * @property string $occupancy_ratio
+ * @property \Illuminate\Support\Carbon $recorded_at
+ * @property string $occupancy_level  Aksesor terkomputasi
  */
 class DensityLog extends Model
 {
-    protected $table = 'density_logs';
+    /**
+     * Tabel hanya punya created_at, tidak ada updated_at.
+     * Set UPDATED_AT ke null agar Eloquent tidak mencoba mengisinya.
+     */
+    const UPDATED_AT = null;
 
+    /**
+     * Atribut yang boleh diisi secara mass-assignment.
+     *
+     * @var list<string>
+     */
     protected $fillable = [
         'vehicle_id',
         'passenger_count',
         'capacity_at_time',
         'occupancy_ratio',
-        'occupancy_level',
         'recorded_at',
     ];
 
-    protected $casts = [
-        'passenger_count'  => 'integer',
-        'capacity_at_time' => 'integer',
-        'occupancy_ratio'  => 'float',
-        'recorded_at'      => 'datetime',
+    /**
+     * Atribut terkomputasi yang ikut disertakan saat serialize.
+     *
+     * @var list<string>
+     */
+    protected $appends = [
+        'occupancy_level',
     ];
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Boot — hitung occupancy_ratio & level otomatis sebelum disimpan
-    // ──────────────────────────────────────────────────────────────────────
-
-    protected static function boot(): void
+    /**
+     * Casting tipe atribut.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
     {
-        parent::boot();
-
-        static::creating(function (DensityLog $log) {
-            if ($log->capacity_at_time > 0) {
-                $log->occupancy_ratio = round(
-                    $log->passenger_count / $log->capacity_at_time,
-                    4
-                );
-            }
-
-            $log->occupancy_level = static::resolveLevel($log->occupancy_ratio ?? 0);
-        });
+        return [
+            'passenger_count'  => 'integer',
+            'capacity_at_time' => 'integer',
+            'occupancy_ratio'  => 'decimal:3',
+            'recorded_at'      => 'datetime',
+        ];
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Relationships
-    // ──────────────────────────────────────────────────────────────────────
-
+    /**
+     * Kendaraan yang dicatat.
+     *
+     * @return BelongsTo<Vehicle, $this>
+     */
     public function vehicle(): BelongsTo
     {
         return $this->belongsTo(Vehicle::class);
     }
 
     /**
-     * Forecast yang dibuat berdasarkan log ini.
+     * Tingkat kepadatan berdasarkan occupancy_ratio.
+     *
+     * - low        : ratio < 0.5   (hijau)
+     * - medium     : 0.5 <= ratio < 0.8 (kuning)
+     * - high       : 0.8 <= ratio <= 1.0 (merah)
+     * - overcrowded: ratio > 1.0   (merah tua)
+     *
+     * @return Attribute<string, never>
      */
-    public function forecasts(): HasMany
+    protected function occupancyLevel(): Attribute
     {
-        return $this->hasMany(Forecast::class, 'based_on_log_id');
-    }
+        return Attribute::make(
+            get: function (): string {
+                $ratio = (float) $this->occupancy_ratio;
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Scopes
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function scopeForVehicle($query, int $vehicleId)
-    {
-        return $query->where('vehicle_id', $vehicleId);
-    }
-
-    public function scopeRecent($query, int $limit = 5)
-    {
-        return $query->orderByDesc('recorded_at')->limit($limit);
+                return match (true) {
+                    $ratio < 0.5  => 'low',
+                    $ratio < 0.8  => 'medium',
+                    $ratio <= 1.0 => 'high',
+                    default       => 'overcrowded',
+                };
+            }
+        );
     }
 
     /**
-     * Filter berdasarkan level kepadatan.
+     * Scope: pencatatan dalam N menit terakhir (default 60 menit).
+     *
+     * @param  Builder<DensityLog>  $query
+     * @return Builder<DensityLog>
      */
-    public function scopeAtLevel($query, string $level)
+    public function scopeRecent(Builder $query, int $minutes = 60): Builder
     {
-        return $query->where('occupancy_level', $level);
+        return $query->where('recorded_at', '>=', now()->subMinutes($minutes));
     }
 
     /**
-     * Filter rentang waktu — untuk endpoint analytics/hourly.
+     * Scope: pencatatan untuk kendaraan tertentu, terbaru dulu.
+     *
+     * @param  Builder<DensityLog>  $query
+     * @return Builder<DensityLog>
      */
-    public function scopeInDateRange($query, string $from, string $to)
+    public function scopeForVehicle(Builder $query, int $vehicleId): Builder
     {
-        return $query->whereBetween('recorded_at', [$from, $to]);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Accessors
-    // ──────────────────────────────────────────────────────────────────────
-
-    /**
-     * Selisih detik antara recorded_at dan sekarang.
-     * Dipakai frontend untuk indikator "data lama" (> 60 detik).
-     */
-    public function getAgeSecondsAttribute(): int
-    {
-        return (int) abs(now()->diffInSeconds($this->recorded_at));
-    }
-
-    /**
-     * Warna marker untuk Leaflet / Chart.js.
-     */
-    public function getMarkerColorAttribute(): string
-    {
-        return match ($this->occupancy_level) {
-            'low'         => 'green',
-            'medium'      => 'yellow',
-            'high'        => 'red',
-            'overcrowded' => 'darkred',
-            default       => 'gray',
-        };
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Static helpers
-    // ──────────────────────────────────────────────────────────────────────
-
-    /**
-     * Resolusi occupancy level dari ratio.
-     * Dipakai di boot() dan bisa dipanggil dari ForecastingService.
-     */
-    public static function resolveLevel(float $ratio): string
-    {
-        if ($ratio > 1.0)  return 'overcrowded';
-        if ($ratio >= 0.8) return 'high';
-        if ($ratio >= 0.5) return 'medium';
-
-        return 'low';
+        return $query->where('vehicle_id', $vehicleId)
+                     ->orderByDesc('recorded_at');
     }
 }

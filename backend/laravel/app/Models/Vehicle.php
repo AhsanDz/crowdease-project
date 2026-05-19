@@ -2,124 +2,101 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
-
 /**
- * Model Vehicle
+ * Armada bus TransJakarta.
  *
- * Merepresentasikan satu unit bus TransJakarta yang beroperasi di koridor tertentu.
+ * Setiap kendaraan beroperasi di satu koridor dan mencatat
+ * kepadatan penumpang secara periodik melalui perangkat IoT.
  *
- * @property int         $id
- * @property string      $plate_number       Nomor polisi bus (unik)
- * @property int         $route_id           Koridor yang dilayani
- * @property int         $capacity           Kapasitas penumpang normal
- * @property bool        $is_active          Apakah bus sedang beroperasi
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
- * @property \Carbon\Carbon|null $deleted_at
+ * @property int    $id
+ * @property int    $route_id
+ * @property string $plate_number
+ * @property int    $capacity
+ * @property string $status
  */
 class Vehicle extends Model
 {
-    use SoftDeletes;
-
-    protected $table = 'vehicles';
-
+    /**
+     * Atribut yang boleh diisi secara mass-assignment.
+     *
+     * @var list<string>
+     */
     protected $fillable = [
-        'plate_number',
         'route_id',
+        'plate_number',
         'capacity',
-        'is_active',
+        'status',
     ];
 
-    protected $casts = [
-        'capacity'  => 'integer',
-        'is_active' => 'boolean',
-    ];
+    /**
+     * Casting tipe atribut.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'capacity' => 'integer',
+        ];
+    }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Relationships
-    // ──────────────────────────────────────────────────────────────────────
-
+    /**
+     * Koridor tempat kendaraan ini beroperasi.
+     *
+     * @return BelongsTo<Route, $this>
+     */
     public function route(): BelongsTo
     {
         return $this->belongsTo(Route::class);
     }
 
+    /**
+     * Seluruh riwayat pencatatan kepadatan kendaraan ini.
+     *
+     * @return HasMany<DensityLog, $this>
+     */
     public function densityLogs(): HasMany
     {
         return $this->hasMany(DensityLog::class);
     }
 
+    /**
+     * Seluruh hasil forecast kepadatan kendaraan ini.
+     *
+     * @return HasMany<Forecast, $this>
+     */
     public function forecasts(): HasMany
     {
         return $this->hasMany(Forecast::class);
     }
 
     /**
-     * Density log terbaru (untuk endpoint current density).
+     * Pencatatan kepadatan TERBARU kendaraan ini.
+     *
+     * Berguna untuk endpoint GET /vehicles/{id}/density/current —
+     * cukup panggil $vehicle->latestDensityLog tanpa query manual.
+     *
+     * @return HasOne<DensityLog, $this>
      */
     public function latestDensityLog(): HasOne
     {
         return $this->hasOne(DensityLog::class)->latestOfMany('recorded_at');
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Scopes
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function scopeActive($query)
-    {
-        return $query->where('is_active', true);
-    }
-
-    public function scopeOnRoute($query, int $routeId)
-    {
-        return $query->where('route_id', $routeId);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Accessors
-    // ──────────────────────────────────────────────────────────────────────
-
     /**
-     * Occupancy ratio terkini berdasarkan latestDensityLog.
-     * Mengembalikan null jika belum ada data sensor.
+     * Scope: hanya kendaraan berstatus aktif.
+     *
+     * @param  Builder<Vehicle>  $query
+     * @return Builder<Vehicle>
      */
-    public function getCurrentOccupancyRatioAttribute(): ?float
+    public function scopeActive(Builder $query): Builder
     {
-        $log = $this->latestDensityLog;
-
-        if (! $log || $log->capacity_at_time === 0) {
-            return null;
-        }
-
-        return round($log->passenger_count / $log->capacity_at_time, 4);
-    }
-
-    /**
-     * Occupancy level terkini: low | medium | high | overcrowded | null.
-     */
-    public function getCurrentOccupancyLevelAttribute(): ?string
-    {
-        return $this->latestDensityLog?->occupancy_level;
-    }
-
-    /**
-     * Warna marker Leaflet berdasarkan kondisi terkini.
-     */
-    public function getMarkerColorAttribute(): string
-    {
-        return match ($this->current_occupancy_level) {
-            'low'         => 'green',
-            'medium'      => 'yellow',
-            'high'        => 'red',
-            'overcrowded' => 'darkred',
-            default       => 'gray',
-        };
+        return $query->where('status', 'active');
     }
 }

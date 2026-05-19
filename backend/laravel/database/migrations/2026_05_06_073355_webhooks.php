@@ -12,16 +12,16 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('webhooks', function (Blueprint $table) {
-            $table->id(); 
+            $table->id();
             $table->string('name', 120);
             $table->string('url', 500); // NOT NULL
             $table->string('secret', 64);
             $table->boolean('is_active')->default(true);
-            $table->timestamp('created_at_updated_at')->useCurrent();
+            $table->timestamps(); // created_at + updated_at
         });
 
         Schema::create('webhook_deliveries', function (Blueprint $table) {
-            $table->id(); 
+            $table->id();
             $table->bigInteger('webhook_id')->unsigned();
             $table->string('event', 64); // NOT NULL
             $table->json('payload');
@@ -29,7 +29,6 @@ return new class extends Migration
             $table->enum('status', ['pending', 'delivered', 'failed'])->default('pending');
             $table->timestamp('created_at')->useCurrent();
 
-            // Foreign Key
             $table->foreign('webhook_id')
                   ->references('id')
                   ->on('webhooks')

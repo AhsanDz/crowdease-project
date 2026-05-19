@@ -2,119 +2,100 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * Model WebhookDelivery
+ * Log pengiriman webhook (TI-2, bonus).
  *
- * Log setiap percobaan pengiriman webhook outbound.
- * Satu record dibuat per dispatch, di-update setiap attempt oleh DeliverWebhook Job.
+ * Setiap baris mencatat satu percobaan pengiriman webhook ke URL
+ * eksternal: event apa, payload yang dikirim, percobaan ke berapa,
+ * dan status hasilnya (pending/delivered/failed).
  *
- * @property int         $id
- * @property int         $webhook_id
- * @property string      $delivery_id     UUID unik per pengiriman (header X-CrowdEase-Delivery-Id)
- * @property string      $event           Nama event yang dikirim
- * @property array       $payload         Full payload JSON
- * @property string      $status          pending | delivered | failed | permanently_failed
- * @property int|null    $response_code   HTTP status code dari receiver
- * @property string|null $response_body   Potongan response body (max 1000 char)
- * @property int         $attempt         Jumlah attempt yang sudah dilakukan
- * @property \Carbon\Carbon|null $delivered_at   Waktu sukses dikirim
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
+ * @property int    $id
+ * @property int    $webhook_id
+ * @property string $event
+ * @property array  $payload
+ * @property int    $attempt
+ * @property string $status
  */
 class WebhookDelivery extends Model
 {
-    protected $table = 'webhook_deliveries';
+    /**
+     * Tabel hanya punya created_at, tidak ada updated_at.
+     */
+    const UPDATED_AT = null;
 
+    /**
+     * Atribut yang boleh diisi secara mass-assignment.
+     *
+     * @var list<string>
+     */
     protected $fillable = [
         'webhook_id',
-        'delivery_id',
         'event',
         'payload',
-        'status',
-        'response_code',
-        'response_body',
         'attempt',
-        'delivered_at',
+        'status',
     ];
 
-    protected $casts = [
-        'payload'      => 'array',
-        'response_code' => 'integer',
-        'attempt'      => 'integer',
-        'delivered_at' => 'datetime',
-    ];
+    /**
+     * Casting tipe atribut.
+     *
+     * Payload disimpan sebagai JSON di database, dicast ke array
+     * agar mudah diakses sebagai struktur data PHP.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'payload' => 'array',
+            'attempt' => 'integer',
+        ];
+    }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Constants
-    // ──────────────────────────────────────────────────────────────────────
-
-    const STATUS_PENDING           = 'pending';
-    const STATUS_DELIVERED         = 'delivered';
-    const STATUS_FAILED            = 'failed';
-    const STATUS_PERMANENTLY_FAILED = 'permanently_failed';
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Relationships
-    // ──────────────────────────────────────────────────────────────────────
-
+    /**
+     * Webhook yang menjadi induk pengiriman ini.
+     *
+     * @return BelongsTo<Webhook, $this>
+     */
     public function webhook(): BelongsTo
     {
         return $this->belongsTo(Webhook::class);
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Scopes
-    // ──────────────────────────────────────────────────────────────────────
-
-    public function scopePending($query)
+    /**
+     * Scope: pengiriman yang masih menunggu (belum tuntas).
+     *
+     * @param  Builder<WebhookDelivery>  $query
+     * @return Builder<WebhookDelivery>
+     */
+    public function scopePending(Builder $query): Builder
     {
-        return $query->where('status', self::STATUS_PENDING);
-    }
-
-    public function scopeDelivered($query)
-    {
-        return $query->where('status', self::STATUS_DELIVERED);
-    }
-
-    public function scopeFailed($query)
-    {
-        return $query->whereIn('status', [
-            self::STATUS_FAILED,
-            self::STATUS_PERMANENTLY_FAILED,
-        ]);
+        return $query->where('status', 'pending');
     }
 
     /**
-     * Filter berdasarkan webhook tertentu.
+     * Scope: pengiriman yang berhasil.
+     *
+     * @param  Builder<WebhookDelivery>  $query
+     * @return Builder<WebhookDelivery>
      */
-    public function scopeForWebhook($query, int $webhookId)
+    public function scopeDelivered(Builder $query): Builder
     {
-        return $query->where('webhook_id', $webhookId);
-    }
-
-    // ──────────────────────────────────────────────────────────────────────
-    // Accessors
-    // ──────────────────────────────────────────────────────────────────────
-
-    /**
-     * Apakah delivery ini sukses.
-     */
-    public function getIsSuccessfulAttribute(): bool
-    {
-        return $this->status === self::STATUS_DELIVERED;
+        return $query->where('status', 'delivered');
     }
 
     /**
-     * Apakah masih bisa di-retry.
+     * Scope: pengiriman yang gagal final.
+     *
+     * @param  Builder<WebhookDelivery>  $query
+     * @return Builder<WebhookDelivery>
      */
-    public function getIsRetryableAttribute(): bool
+    public function scopeFailed(Builder $query): Builder
     {
-        return in_array($this->status, [
-            self::STATUS_PENDING,
-            self::STATUS_FAILED,
-        ]) && $this->attempt < 5;
+        return $query->where('status', 'failed');
     }
 }

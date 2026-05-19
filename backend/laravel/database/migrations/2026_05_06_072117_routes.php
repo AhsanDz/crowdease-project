@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('name', 120);
             $table->char('color', 7); // Format: #RRGGBB
             $table->boolean('is_active')->default(true);
-            $table->timestamp('created_at_updated_at')->useCurrent();
+            $table->timestamps(); // created_at + updated_at
         });
 
         Schema::create('stops', function (Blueprint $table) {
@@ -27,13 +27,12 @@ return new class extends Migration
             $table->decimal('latitude', 9, 6);
             $table->decimal('longitude', 9, 6);
             $table->smallInteger('sequence');
-            $table->timestamp('created_at_updated_at')->useCurrent();
+            $table->timestamps(); // created_at + updated_at
 
-            // Foreign Key
             $table->foreign('route_id')
-                    ->references('id')
-                    ->on('routes')
-                    ->onDelete('cascade');
+                  ->references('id')
+                  ->on('routes')
+                  ->onDelete('cascade');
         });
 
         Schema::create('vehicles', function (Blueprint $table) {
@@ -42,25 +41,23 @@ return new class extends Migration
             $table->string('plate_number', 20)->unique();
             $table->integer('capacity');
             $table->enum('status', ['active', 'maintenance', 'retired'])->default('active');
-            $table->timestamp('created_at_updated_at')->useCurrent();
+            $table->timestamps(); // created_at + updated_at
 
-            // Foreign Key
             $table->foreign('route_id')
-                    ->references('id')
-                    ->on('routes')
-                    ->onDelete('cascade');
+                  ->references('id')
+                  ->on('routes')
+                  ->onDelete('cascade');
         });
-        
+
         Schema::create('density_logs', function (Blueprint $table) {
             $table->id(); // BIGINT UNSIGNED, PK, AUTO_INCREMENT
             $table->unsignedBigInteger('vehicle_id');
-            $table->integer('passenger_count'); // >= 0 (validasi di app / DB constraint tambahan)
+            $table->integer('passenger_count'); // >= 0 (divalidasi di app)
             $table->integer('capacity_at_time'); // > 0
             $table->decimal('occupancy_ratio', 4, 3); // contoh: 0.875
             $table->timestamp('recorded_at')->index();
-            $table->timestamp('created_at')->useCurrent();
+            $table->timestamp('created_at')->useCurrent(); // immutable: tanpa updated_at
 
-            // Foreign Key
             $table->foreign('vehicle_id')
                   ->references('id')
                   ->on('vehicles')
@@ -73,9 +70,8 @@ return new class extends Migration
             $table->integer('predicted_count'); // NOT NULL
             $table->timestamp('predicted_for')->index();
             $table->string('model_version', 50);
-            $table->timestamp('created_at')->useCurrent();
+            $table->timestamp('created_at')->useCurrent(); // immutable: tanpa updated_at
 
-            // Foreign Key
             $table->foreign('vehicle_id')
                   ->references('id')
                   ->on('vehicles')
@@ -93,6 +89,5 @@ return new class extends Migration
         Schema::dropIfExists('stops');
         Schema::dropIfExists('vehicles');
         Schema::dropIfExists('routes');
-        
     }
 };
