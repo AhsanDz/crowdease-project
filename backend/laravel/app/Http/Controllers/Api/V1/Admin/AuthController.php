@@ -3,85 +3,83 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\LoginRequest;
+use App\Http\Resources\Api\V1\UserResource;
 use App\Models\User;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 
 /**
- * AuthController
+ * Controller autentikasi operator.
  *
- * POST /api/v1/admin/auth/login   → login, dapat bearer token
- * POST /api/v1/admin/auth/logout  → revoke token saat ini
- * GET  /api/v1/admin/auth/me      → info user yang sedang login
+ * Endpoint:
+ *   POST /api/v1/auth/login   - tukar email+password dengan bearer token
+ *   POST /api/v1/auth/logout  - cabut token yang sedang dipakai
+ *   GET  /api/v1/auth/me      - info user yang sedang login
+ *
+ * Memakai Laravel Sanctum untuk penerbitan dan validasi bearer token.
+ * Token disimpan di tabel personal_access_tokens.
  */
 class AuthController extends Controller
 {
     /**
-     * Login operator dan kembalikan Sanctum bearer token.
+     * Login operator dan terbitkan bearer token Sanctum.
+     *
+     * Saat kredensial salah, mengembalikan pesan generik "Email atau
+     * password salah" — bukan "email tidak ditemukan" atau "password
+     * salah" — untuk mencegah enumerasi user oleh penyerang.
      */
-    public function login(Request $request): JsonResponse
+    public function login(LoginRequest $request): JsonResponse
     {
-        $request->validate([
-            'email'    => ['required', 'email'],
-            'password' => ['required', 'string'],
-        ]);
+        $credentials = $request->validated();
 
-        $user = User::where('email', $request->email)->first();
+        $user = User::where('email', $credentials['email'])->first();
 
-        if (! $user || ! Hash::check($request->password, $user->password)) {
-            throw ValidationException::withMessages([
-                'email' => ['Kredensial yang diberikan tidak valid.'],
-            ]);
+        if ($user === null || ! Hash::check($credentials['password'], $user->password)) {
+            return ApiResponse::error(
+                'INVALID_CREDENTIALS',
+                'Email atau password salah.',
+                null,
+                401
+            );
         }
 
-        // Hapus token lama agar tidak menumpuk
-        $user->tokens()->delete();
+        // Nama token: pakai device_name kalau dikirim, kalau tidak default 'dashboard'.
+        // Berguna untuk membedakan token saat operator login dari banyak perangkat.
+        $tokenName = $credentials['device_name'] ?? 'dashboard';
 
-        $token = $user->createToken('admin-token')->plainTextToken;
+        $plainTextToken = $user->createToken($tokenName)->plainTextToken;
 
-        return response()->json([
-            'message' => 'Login berhasil.',
-            'data'    => [
-                'token'      => $token,
-                'token_type' => 'Bearer',
-                'user'       => [
-                    'id'    => $user->id,
-                    'name'  => $user->name,
-                    'email' => $user->email,
-                    'role'  => $user->role,
-                ],
-            ],
+        return ApiResponse::success([
+            'user'       => new UserResource($user),
+            'token'      => $plainTextToken,
+            'token_type' => 'Bearer',
         ]);
     }
 
     /**
-     * Logout — revoke token yang sedang dipakai.
+     * Cabut token yang dipakai dalam request ini (logout dari perangkat ini).
+     *
+     * Token lain milik user yang sama (mis. dari perangkat lain) TIDAK
+     * dicabut — itu pola standar logout per-sesi. Kalau ingin logout
+     * dari semua perangkat sekaligus, panggil $user->tokens()->delete().
      */
     public function logout(Request $request): JsonResponse
     {
         $request->user()->currentAccessToken()->delete();
 
-        return response()->json([
-            'message' => 'Logout berhasil.',
+        return ApiResponse::success([
+            'message' => 'Berhasil logout. Token telah dicabut.',
         ]);
     }
 
     /**
-     * Kembalikan data user yang sedang login.
+     * Info user yang sedang login (berdasarkan bearer token).
      */
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user();
-
-        return response()->json([
-            'data' => [
-                'id'    => $user->id,
-                'name'  => $user->name,
-                'email' => $user->email,
-                'role'  => $user->role,
-            ],
-        ]);
+        return ApiResponse::success(new UserResource($request->user()));
     }
 }
