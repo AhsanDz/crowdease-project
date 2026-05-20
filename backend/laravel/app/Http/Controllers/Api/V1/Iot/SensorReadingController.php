@@ -3,72 +3,134 @@
 namespace App\Http\Controllers\Api\V1\Iot;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Api\V1\StoreSensorReadingRequest;
 use App\Models\DensityLog;
 use App\Models\Vehicle;
 use App\Services\ForecastingService;
-use App\Support\ApiResponse;
+use App\Services\WebhookDispatcher;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 /**
- * Controller penerimaan data sensor dari perangkat IoT.
+ * SensorReadingController
  *
- * Titik integrasi TI-1 — endpoint yang dikonsumsi IoT Simulator.
+ * POST /api/v1/iot/sensors/readings
  *
- * Endpoint : POST /api/v1/sensors/readings
- * Auth     : middleware api.key (header X-API-Key)
+ * Menerima data sensor dari IoT Simulator, simpan ke density_logs,
+ * jalankan forecasting, lalu trigger webhook jika level berubah.
  */
 class SensorReadingController extends Controller
 {
     public function __construct(
-        private readonly ForecastingService $forecastingService
-    ) {
+        private readonly ForecastingService $forecasting,
+        private readonly WebhookDispatcher  $webhook,
+    ) {}
+
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'vehicle_id'      => ['required', 'integer', 'exists:vehicles,id'],
+            'passenger_count' => ['required', 'integer', 'min:0'],
+            'recorded_at'     => ['required', 'date'],
+        ]);
+
+        /** @var Vehicle $vehicle */
+        $vehicle = Vehicle::with('route')
+            ->where('id', $validated['vehicle_id'])
+            ->firstOrFail();
+
+        // Level sebelum reading ini masuk
+        $previousLevel = $vehicle->latestDensityLog?->occupancy_level;
+
+        // Buat density log — boot() di model otomatis hitung ratio & level
+        /** @var DensityLog $log */
+        $log = DensityLog::create([
+            'vehicle_id'       => $vehicle->id,
+            'passenger_count'  => $validated['passenger_count'],
+            'capacity_at_time' => $vehicle->capacity,
+            'recorded_at'      => $validated['recorded_at'],
+        ]);
+
+        $currentLevel = $log->occupancy_level;
+
+        // Jalankan forecasting — return array of forecast data
+        /** @var array<int, array<string, mixed>> $forecasts */
+        $forecasts = $this->forecasting->forecast($vehicle->id);
+
+        // Bangun payload untuk webhook
+        $payload = $this->buildPayload($vehicle, $log, $forecasts);
+
+        // Deteksi perubahan level dan dispatch event yang sesuai
+        $this->dispatchLevelEvents($previousLevel, $currentLevel, $payload);
+
+        return response()->json([
+            'message' => 'Sensor reading berhasil dicatat.',
+            'data'    => [
+                'log_id'          => $log->id,
+                'occupancy_level' => $currentLevel,
+                'occupancy_ratio' => $log->occupancy_ratio,
+                'forecasts'       => $forecasts,
+            ],
+        ], 201);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Dispatch webhook event berdasarkan perubahan level.
+     *
+     * Naik ke high/overcrowded  → density.high_threshold_crossed
+     * Turun ke medium/low       → density.low_threshold_recovered
+     * Selalu                    → density.recorded
+     */
+    private function dispatchLevelEvents(
+        ?string $previousLevel,
+        string  $currentLevel,
+        array   $payload
+    ): void {
+        // Selalu dispatch density.recorded
+        $this->webhook->dispatch('density.recorded', $payload);
+
+        $dangerLevels = ['high', 'overcrowded'];
+        $normalLevels = ['low', 'medium'];
+
+        $wasNormal = in_array($previousLevel, $normalLevels) || $previousLevel === null;
+        $isDanger  = in_array($currentLevel, $dangerLevels);
+
+        if ($wasNormal && $isDanger) {
+            $this->webhook->dispatch('density.high_threshold_crossed', $payload);
+            return;
+        }
+
+        $wasDanger = in_array($previousLevel, $dangerLevels);
+        $isNormal  = in_array($currentLevel, $normalLevels);
+
+        if ($wasDanger && $isNormal) {
+            $this->webhook->dispatch('density.low_threshold_recovered', $payload);
+        }
     }
 
     /**
-     * Terima satu pencatatan kepadatan dari perangkat IoT.
-     *
-     * Alur:
-     *   1. Validasi payload (oleh StoreSensorReadingRequest).
-     *   2. Hitung occupancy_ratio lalu simpan ke tabel density_logs.
-     *   3. Jalankan ForecastingService untuk memperbarui prediksi.
-     *   4. Kembalikan response 201 sesuai API Contract.
+     * Bangun payload standar untuk semua event.
      */
-    public function store(StoreSensorReadingRequest $request): JsonResponse
+    private function buildPayload(Vehicle $vehicle, DensityLog $log, array $forecasts): array
     {
-        $data = $request->validated();
-
-        $vehicle = Vehicle::findOrFail($data['vehicle_id']);
-
-        // occupancy_ratio = penumpang / kapasitas saat itu (3 angka desimal,
-        // sesuai kolom decimal(4,3) pada tabel density_logs).
-        $ratio = round($data['passenger_count'] / $data['capacity_at_time'], 3);
-
-        $densityLog = DensityLog::create([
-            'vehicle_id'       => $vehicle->id,
-            'passenger_count'  => $data['passenger_count'],
-            'capacity_at_time' => $data['capacity_at_time'],
-            'occupancy_ratio'  => $ratio,
-            'recorded_at'      => $data['recorded_at'],
-        ]);
-
-        // Perbarui prediksi kepadatan untuk kendaraan ini berdasarkan
-        // pencatatan terbaru (termasuk yang baru saja disimpan).
-        $forecasts = $this->forecastingService->forecast($vehicle);
-
-        // CATATAN: di titik ini nantinya event DensityRecorded di-dispatch
-        // untuk memicu webhook outbound (TI-2). Akan ditambahkan pada
-        // langkah bonus webhook.
-
-        return ApiResponse::success([
-            'id'                 => $densityLog->id,
-            'vehicle_id'         => $densityLog->vehicle_id,
-            'passenger_count'    => $densityLog->passenger_count,
-            'capacity_at_time'   => $densityLog->capacity_at_time,
-            'occupancy_ratio'    => $ratio,
-            'occupancy_level'    => $densityLog->occupancy_level,
-            'recorded_at'        => $densityLog->recorded_at->toIso8601String(),
-            'forecast_triggered' => $forecasts->isNotEmpty(),
-        ], null, 201);
+        return [
+            'vehicle' => [
+                'id'           => $vehicle->id,
+                'plate_number' => $vehicle->plate_number,
+                'route_code'   => $vehicle->route->code ?? '-',
+                'route_name'   => $vehicle->route->name ?? '-',
+            ],
+            'density' => [
+                'passenger_count'  => $log->passenger_count,
+                'capacity'         => $log->capacity_at_time,
+                'occupancy_ratio'  => $log->occupancy_ratio,
+                'occupancy_level'  => $log->occupancy_level,
+                'recorded_at'      => $log->recorded_at
+                    ->timezone('Asia/Jakarta')
+                    ->toIso8601String(),
+            ],
+            'forecasts' => $forecasts,
+        ];
     }
 }

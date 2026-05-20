@@ -5,118 +5,205 @@ namespace App\Services;
 use App\Models\DensityLog;
 use App\Models\Forecast;
 use App\Models\Vehicle;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
 /**
- * Layanan forecasting kepadatan jangka pendek.
+ * ForecastingService
  *
- * Memprediksi jumlah penumpang untuk 5, 10, dan 15 menit ke depan
- * berdasarkan riwayat pencatatan terbaru sebuah kendaraan.
+ * Memprediksi kepadatan bus TransJakarta untuk 5, 10, dan 15 menit ke depan
+ * menggunakan algoritma Moving Average atas N data terakhir.
  *
- * --- Model "moving_avg_v1" ---
- * Basis prediksi adalah rata-rata bergerak (moving average) dari N
- * pencatatan terakhir, lalu disesuaikan dengan tren jangka pendek
- * yang diredam (damped). Tren dihitung dari selisih rata-rata paruh
- * terbaru dengan paruh lama di dalam window.
- *
- *   prediksi(h) = rata_rata_window + tren * faktor_peredam(h)
- *
- * Faktor peredam < 1 mencegah ekstrapolasi tren meledak pada horizon
- * yang lebih jauh. Pendekatan ini sengaja dibuat sederhana namun
- * dapat dijelaskan — sesuai ruang lingkup proyek mata kuliah.
- *
- * Dipanggil oleh SensorReadingController setiap kali ada pencatatan
- * kepadatan baru masuk (titik integrasi TI-1).
+ * Model: moving_avg_v1
+ * Dipanggil setiap kali sensor reading masuk (dari SensorReadingController).
  */
 class ForecastingService
 {
-    /** Identitas versi model — disimpan di kolom forecasts.model_version. */
-    private const MODEL_VERSION = 'moving_avg_v1';
-
-    /** Jumlah pencatatan historis terbaru yang dipakai sebagai window. */
+    /**
+     * Jumlah data historis yang dipakai untuk kalkulasi moving average.
+     */
     private const WINDOW_SIZE = 5;
 
     /**
-     * Horizon prediksi (menit ke depan) beserta faktor peredam tren.
-     *
-     * @var array<int, float>
+     * Menit ke depan yang diprediksi.
      */
-    private const HORIZONS = [
-        5  => 0.5,
-        10 => 0.8,
-        15 => 1.0,
-    ];
+    private const FORECAST_HORIZONS = [5, 10, 15];
 
     /**
-     * Hasilkan dan simpan forecast untuk sebuah kendaraan.
-     *
-     * Forecast lama kendaraan ini dihapus terlebih dahulu sehingga
-     * tabel forecasts selalu memuat prediksi terkini saja.
-     *
-     * @return Collection<int, Forecast> Daftar forecast yang dibuat.
+     * Batas ratio untuk menentukan occupancy_level.
      */
-    public function forecast(Vehicle $vehicle): Collection
-    {
-        $counts = $this->recentPassengerCounts($vehicle);
+    private const THRESHOLD_LOW    = 0.5;
+    private const THRESHOLD_HIGH   = 0.8;
 
-        if ($counts->isEmpty()) {
-            // Belum ada data sama sekali — tidak bisa membuat prediksi.
-            return collect();
+    /**
+     * Entry point utama: hitung prediksi dan simpan ke tabel forecasts.
+     *
+     * @param  int  $vehicleId
+     * @return array<int, array<string, mixed>>
+     */
+    public function forecast(int $vehicleId): array
+    {
+        /** @var Vehicle $vehicle */
+        $vehicle = Vehicle::query()->where('id', $vehicleId)->firstOrFail();
+
+        // Ambil N data terbaru untuk vehicle ini
+        $recentLogs = $this->getRecentLogs($vehicleId);
+
+        if ($recentLogs->isEmpty()) {
+            return [];
         }
 
-        $average = (float) $counts->avg();
-        $trend   = $this->estimateTrend($counts);
+        $currentLog = $recentLogs->first();
+        $capacity   = $currentLog->capacity_at_time;
 
-        // Selalu simpan hanya prediksi terkini: hapus forecast lama.
-        Forecast::where('vehicle_id', $vehicle->id)->delete();
+        // Hitung moving average dari passenger_count
+        $avgPassengerCount = $this->movingAverage($recentLogs);
 
-        $forecasts = collect();
+        // Hitung trend (delta rata-rata antar reading)
+        $trend = $this->calculateTrend($recentLogs);
 
-        foreach (self::HORIZONS as $minutesAhead => $dampingFactor) {
-            $predicted = (int) round($average + $trend * $dampingFactor);
-            $predicted = max(0, $predicted); // jumlah penumpang tidak negatif
+        $forecasts = [];
 
-            $forecasts->push(Forecast::create([
-                'vehicle_id'      => $vehicle->id,
-                'predicted_count' => $predicted,
-                'predicted_for'   => now()->addMinutes($minutesAhead),
-                'model_version'   => self::MODEL_VERSION,
-            ]));
+        foreach (self::FORECAST_HORIZONS as $minutesAhead) {
+            // Prediksi sederhana: avg + (trend * horizon)
+            $predictedCount = (int) round($avgPassengerCount + ($trend * $minutesAhead));
+
+            // Clamp agar tidak negatif atau melebihi kapasitas * 1.2 (overcrowded)
+            $predictedCount = max(0, min($predictedCount, (int) ($capacity * 1.2)));
+
+            $predictedRatio = $capacity > 0
+                ? round($predictedCount / $capacity, 4)
+                : 0;
+
+            $predictedLevel = $this->resolveOccupancyLevel($predictedRatio);
+
+            $predictedFor = Carbon::now('Asia/Jakarta')
+                ->addMinutes($minutesAhead);
+
+            // Upsert ke tabel forecasts (satu baris per vehicle per horizon)
+            $forecast = Forecast::updateOrCreate(
+                [
+                    'vehicle_id'     => $vehicleId,
+                    'minutes_ahead'  => $minutesAhead,
+                ],
+                [
+                    'predicted_count'           => $predictedCount,
+                    'predicted_occupancy_ratio'  => $predictedRatio,
+                    'predicted_occupancy_level'  => $predictedLevel,
+                    'predicted_for'             => $predictedFor,
+                    'model_version'             => 'moving_avg_v1',
+                    'based_on_log_id'           => $currentLog->id,
+                ]
+            );
+
+            $forecasts[] = [
+                'predicted_for'             => $predictedFor->toIso8601String(),
+                'minutes_ahead'             => $minutesAhead,
+                'predicted_count'           => $predictedCount,
+                'predicted_occupancy_level' => $predictedLevel,
+            ];
         }
 
         return $forecasts;
     }
 
     /**
-     * Ambil passenger_count dari N pencatatan terakhir (terbaru dulu).
+     * Ambil hasil forecast terkini untuk satu vehicle.
+     * Dipakai oleh PublicController untuk endpoint GET /vehicles/{id}/density/forecast
      *
-     * @return Collection<int, int>
+     * @param  int  $vehicleId
+     * @return array
      */
-    private function recentPassengerCounts(Vehicle $vehicle): Collection
+    public function getLatestForecasts(int $vehicleId): array
     {
-        return DensityLog::forVehicle($vehicle->id)
+        $forecasts = Forecast::where('vehicle_id', $vehicleId)
+            ->orderBy('minutes_ahead')
+            ->get();
+
+        if ($forecasts->isEmpty()) {
+            return [];
+        }
+
+        return $forecasts->map(fn ($f) => [
+            'predicted_for'             => Carbon::parse($f->predicted_for)
+                ->timezone('Asia/Jakarta')
+                ->toIso8601String(),
+            'minutes_ahead'             => $f->minutes_ahead,
+            'predicted_count'           => $f->predicted_count,
+            'predicted_occupancy_level' => $f->predicted_occupancy_level,
+        ])->toArray();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Internal helpers
+    // ──────────────────────────────────────────────────────────────────────
+
+    /**
+     * Ambil WINDOW_SIZE density log terbaru untuk satu vehicle.
+     */
+    private function getRecentLogs(int $vehicleId): Collection
+    {
+        return DensityLog::where('vehicle_id', $vehicleId)
+            ->orderByDesc('recorded_at')
             ->limit(self::WINDOW_SIZE)
-            ->pluck('passenger_count');
+            ->get();
     }
 
     /**
-     * Estimasi tren jangka pendek dari window pencatatan.
-     *
-     * Membandingkan rata-rata paruh terbaru dengan paruh lama.
-     * Hasil positif berarti kepadatan sedang naik, negatif berarti turun.
-     *
-     * @param  Collection<int, int>  $counts  Terurut terbaru dulu.
+     * Hitung simple moving average dari passenger_count.
      */
-    private function estimateTrend(Collection $counts): float
+    private function movingAverage(Collection $logs): float
     {
-        if ($counts->count() < 2) {
+        return $logs->avg('passenger_count') ?? 0.0;
+    }
+
+    /**
+     * Hitung trend (rata-rata delta per interval antar reading).
+     *
+     * Positif = jumlah penumpang cenderung naik
+     * Negatif = cenderung turun
+     */
+    private function calculateTrend(Collection $logs): float
+    {
+        if ($logs->count() < 2) {
             return 0.0;
         }
 
-        $half      = (int) floor($counts->count() / 2);
-        $recentAvg = (float) $counts->take($half)->avg();
-        $olderAvg  = (float) $counts->slice($half)->avg();
+        // Logs sudah diurutkan DESC (terbaru duluan), balik agar kronologis
+        $ordered = $logs->reverse()->values();
 
-        return $recentAvg - $olderAvg;
+        $deltas = [];
+        for ($i = 1; $i < $ordered->count(); $i++) {
+            $deltas[] = $ordered[$i]->passenger_count - $ordered[$i - 1]->passenger_count;
+        }
+
+        return count($deltas) > 0
+            ? array_sum($deltas) / count($deltas)
+            : 0.0;
+    }
+
+    /**
+     * Tentukan occupancy_level berdasarkan ratio.
+     *
+     * < 0.5          → low
+     * 0.5 – 0.79     → medium
+     * 0.8 – 1.0      → high
+     * > 1.0          → overcrowded
+     */
+    public function resolveOccupancyLevel(float $ratio): string
+    {
+        if ($ratio > 1.0) {
+            return 'overcrowded';
+        }
+
+        if ($ratio >= self::THRESHOLD_HIGH) {
+            return 'high';
+        }
+
+        if ($ratio >= self::THRESHOLD_LOW) {
+            return 'medium';
+        }
+
+        return 'low';
     }
 }

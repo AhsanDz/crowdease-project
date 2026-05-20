@@ -42,7 +42,8 @@ return new class extends Migration
             $table->integer('capacity');
             $table->enum('status', ['active', 'maintenance', 'retired'])->default('active');
             $table->timestamps(); // created_at + updated_at
-
+            $table->boolean('is_active')->default(true);
+            
             $table->foreign('route_id')
                   ->references('id')
                   ->on('routes')

@@ -11,6 +11,8 @@ use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
+use Illuminate\Console\Scheduling\Schedule;
+use App\Console\Commands\SendDensitySummary;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -24,6 +26,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'api.key' => ApiKeyAuth::class,
         ]);
+    })
+    ->withSchedule(function (Schedule $schedule) {
+ 
+        // Kirim summary kepadatan ke Telegram setiap 5 menit
+        $schedule->command(SendDensitySummary::class)
+            ->everyFiveMinutes()
+            ->withoutOverlapping()           // skip jika run sebelumnya belum selesai
+            ->runInBackground()              // tidak memblok worker lain
+            ->appendOutputTo(storage_path('logs/density-summary.log'));
+ 
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // Untuk request ke /api/*, kembalikan error dalam format amplop

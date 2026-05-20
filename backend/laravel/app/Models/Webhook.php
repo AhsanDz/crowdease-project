@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 /**
  * URL webhook eksternal yang terdaftar (TI-2, bonus).
@@ -52,8 +53,35 @@ class Webhook extends Model
     protected function casts(): array
     {
         return [
-            'is_active' => 'boolean',
+            'events'            => 'array',
+            'is_active'         => 'boolean',
+            'total_deliveries'  => 'integer',
+            'failed_deliveries' => 'integer',
+            'last_triggered_at' => 'datetime',
         ];
+    }
+
+    protected static function boot(): void
+    {
+        parent::boot();
+
+        // Auto-generate secret saat webhook baru dibuat
+        static::creating(function (Webhook $webhook) {
+            if (empty($webhook->secret)) {
+                $webhook->secret = 'whsec_' . Str::random(32);
+            }
+        });
+    }
+
+    public function recordDelivery(bool $success): void
+    {
+        $this->increment('total_deliveries');
+
+        if (! $success) {
+            $this->increment('failed_deliveries');
+        }
+
+        $this->update(['last_triggered_at' => now()]);
     }
 
     /**

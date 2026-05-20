@@ -51,11 +51,7 @@ class Route extends Model
      *
      * @return HasMany<Stop, $this>
      */
-    public function stops(): HasMany
-    {
-        return $this->hasMany(Stop::class)->orderBy('sequence');
-    }
-
+    
     /**
      * Armada bus yang beroperasi di koridor ini.
      *
@@ -64,6 +60,16 @@ class Route extends Model
     public function vehicles(): HasMany
     {
         return $this->hasMany(Vehicle::class);
+    }
+
+    public function activeVehicles(): HasMany
+    {
+        return $this->hasMany(Vehicle::class)->where('is_active', true);
+    }
+
+    public function stops(): HasMany
+    {
+        return $this->hasMany(Stop::class)->orderBy('sequence');
     }
 
     /**
