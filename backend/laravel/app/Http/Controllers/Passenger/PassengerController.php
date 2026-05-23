@@ -4,46 +4,46 @@ namespace App\Http\Controllers\Passenger;
 
 use App\Http\Controllers\Controller;
 use App\Models\Route;
-use Illuminate\View\View;
+use App\Models\Stop;
 
-/**
- * Controller untuk halaman web aplikasi penumpang.
- *
- * Catatan arsitektur: controller ini sengaja minimal — ia hanya
- * mengembalikan kerangka HTML kosong. Seluruh data (daftar koridor,
- * halte, armada, kepadatan, forecast) di-fetch oleh JavaScript di
- * sisi browser melalui /api/v1/* secara langsung.
- *
- * Pendekatan ini membuat titik integrasi TI-3 (Backend -> Passenger
- * App) terlihat sebagai cerita yang utuh: aplikasi penumpang
- * benar-benar bertindak sebagai KLIEN dari REST API, sama seperti
- * yang akan dilakukan aplikasi mobile pihak ketiga di kemudian hari.
- * Saat demo, buka DevTools -> Network untuk menunjukkan request
- * polling berulang yang masuk ke /api/v1/routes/{id}/vehicles.
- */
 class PassengerController extends Controller
 {
     /**
-     * Halaman utama — pilih koridor.
+     * GET /
+     * Halaman beranda: daftar koridor.
      */
-    public function home(): View
+    public function home()
     {
         return view('passenger.home');
     }
 
     /**
-     * Halaman peta koridor — menampilkan halte dan armada real-time.
-     *
-     * Parameter $code adalah kode koridor (mis. "K1") dari URL.
-     * Eloquent lookup di sini hanya untuk validasi server-side dan
-     * meneruskan id koridor ke JavaScript di view.
+     * GET /koridor/{code}
+     * Halaman peta koridor. Resolve code -> Route untuk dipass ke view.
+     * Note: tabel routes belum punya kolom 'status' — jangan filter di sini.
      */
-    public function map(string $code): View
+    public function map(string $code)
     {
-        $route = Route::where('code', $code)
-            ->where('is_active', true)
-            ->firstOrFail();
-
+        $route = Route::where('code', $code)->firstOrFail();
         return view('passenger.map', ['route' => $route]);
+    }
+
+    /**
+     * GET /halte
+     * Daftar semua halte di semua koridor (dengan search di sisi client).
+     */
+    public function stops()
+    {
+        return view('passenger.stops');
+    }
+
+    /**
+     * GET /halte/{stop}
+     * Detail satu halte: posisi, koridor pemilik, dan armada yang sedang mendekat.
+     */
+    public function stopDetail(int $stop)
+    {
+        $stopModel = Stop::with('route')->findOrFail($stop);
+        return view('passenger.stop-detail', ['stop' => $stopModel]);
     }
 }

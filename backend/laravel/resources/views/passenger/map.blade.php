@@ -4,306 +4,542 @@
 
 @section('content')
 
-{{-- Top bar dengan info koridor + indikator live --}}
-<header class="bg-white border-b border-slate-200 sticky top-0 z-10">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-4">
-        <a href="/" class="text-slate-500 hover:text-slate-800 text-sm flex items-center gap-1">
-            <span class="text-lg">←</span>
-            <span class="hidden sm:inline">Kembali</span>
-        </a>
+{{-- Style khusus halaman peta --}}
+<style>
+    /*
+        Geser tombol zoom Leaflet (+/-) ke bawah floating top bar.
+        Top bar tingginya: top:12 + 36px button = ~48px; kasih ruang ~60px supaya tidak nempel.
+        Tanpa ini, tombol back dan zoom kelihatan kayak satu toolbar yang berdempetan.
+    */
+    #map .leaflet-top.leaflet-left { padding-top: 60px; }
+</style>
 
-        <div class="h-8 w-1.5 rounded-full" style="background-color: {{ $route->color }}"></div>
-
-        <div class="flex-1 min-w-0">
-            <div class="font-bold text-lg text-slate-800">{{ $route->code }}</div>
-            <div class="text-xs text-slate-500 truncate">{{ $route->name }}</div>
+{{-- Header --}}
+<header class="bg-white border-b px-5 py-3.5 flex items-center justify-between" style="border-color: var(--ink-100)">
+    <div class="flex items-center gap-2.5">
+        <div class="logo">C</div>
+        <div>
+            <div class="font-extrabold text-[15px] leading-tight" style="letter-spacing:-0.2px">CrowdEase</div>
+            <div class="text-[11.5px]" style="color: var(--ink-400); margin-top:-1px">Kepadatan TransJakarta</div>
         </div>
-
-        <div class="flex items-center gap-3 text-xs">
-            <span class="flex items-center gap-1.5 text-slate-600">
-                <span id="live-dot" class="w-2 h-2 rounded-full bg-green-500"></span>
-                <span class="hidden sm:inline">Live</span>
-            </span>
-            <span id="last-updated" class="text-slate-400 hidden sm:inline">—</span>
-        </div>
+    </div>
+    <div class="flex items-center gap-2">
+        <span id="live-pill" class="pill pill-low">
+            <span class="pill-dot pulse-anim" style="background: var(--c-low)"></span>
+            Live
+        </span>
+        <span id="updated-text" class="text-[11px] hidden sm:inline" style="color: var(--ink-400)">—</span>
     </div>
 </header>
 
-{{-- Legenda warna --}}
-<div class="bg-white border-b border-slate-200 px-4 py-2.5">
-    <div class="max-w-7xl mx-auto flex items-center gap-4 text-xs text-slate-600 flex-wrap">
-        <span class="font-medium text-slate-700">Kepadatan:</span>
-        <span class="flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-full" style="background-color:#22c55e"></span>Lengang
-        </span>
-        <span class="flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-full" style="background-color:#eab308"></span>Sedang
-        </span>
-        <span class="flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-full" style="background-color:#ef4444"></span>Padat
-        </span>
-        <span class="flex items-center gap-1.5">
-            <span class="w-3 h-3 rounded-full" style="background-color:#7f1d1d"></span>Overcrowded
-        </span>
-        <span class="text-slate-400 hidden md:inline ml-auto">
-            Titik abu-abu = halte &nbsp;·&nbsp; Klik marker bus untuk detail
-        </span>
+{{-- Map area --}}
+<div class="flex-1 relative" style="background:#EDEEF0">
+
+    {{-- Floating top bar overlay --}}
+    <div class="absolute z-50 flex items-center gap-2.5" style="top:12px; left:12px; right:12px">
+        <a href="/" class="bg-white border flex items-center justify-center"
+           style="width:36px; height:36px; border-radius:10px; border-color:var(--ink-100);
+                  box-shadow:0 1px 3px rgba(11,15,20,0.06)"
+           aria-label="Kembali">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6"/>
+            </svg>
+        </a>
+        <div class="bg-white border flex items-center gap-2.5 flex-1 min-w-0"
+             style="border-color:var(--ink-100); border-radius:12px; padding:8px 12px;
+                    box-shadow:0 1px 3px rgba(11,15,20,0.06)">
+            <div class="font-extrabold text-white flex items-center justify-center flex-shrink-0"
+                 style="width:28px; height:28px; border-radius:8px;
+                        background:{{ $route->color }}; font-size:12px; letter-spacing:-0.5px;
+                        box-shadow: inset 0 -2px 0 rgba(0,0,0,0.15)">
+                {{ $route->code }}
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="font-bold truncate" style="font-size:13.5px; line-height:1.15">{{ $route->name }}</div>
+                <div id="corridor-stats" style="font-size:11px; color:var(--ink-400)">— halte · — bus</div>
+            </div>
+        </div>
+    </div>
+
+    {{-- Legend --}}
+    <div class="absolute z-40 bg-white border flex flex-col gap-1.5 font-semibold"
+         style="top:64px; right:12px; border-color:var(--ink-100); border-radius:10px;
+                padding:8px 10px; box-shadow:0 1px 3px rgba(11,15,20,0.06); font-size:11px">
+        <div class="flex items-center gap-1.5">
+            <span style="width:10px; height:10px; border-radius:999px; background:var(--c-low); border:2px solid #fff; box-shadow: 0 0 0 1px var(--c-low)"></span>
+            <span>Lengang</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+            <span style="width:10px; height:10px; border-radius:999px; background:var(--c-med); border:2px solid #fff; box-shadow: 0 0 0 1px var(--c-med)"></span>
+            <span>Sedang</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+            <span style="width:10px; height:10px; border-radius:999px; background:var(--c-high); border:2px solid #fff; box-shadow: 0 0 0 1px var(--c-high)"></span>
+            <span>Padat</span>
+        </div>
+    </div>
+
+    {{-- Peta Leaflet --}}
+    {{--
+        PENTING: isolation:isolate memaksa elemen ini jadi stacking context terisolasi.
+        Tanpa ini, z-index internal Leaflet (tile-pane 200, marker-pane 600, control 1000)
+        "bocor" ke root stacking context dan menutupi bottom sheet (z-100), top bar (z-50),
+        dan legend (z-40). Dengan isolation:isolate, semua z-index Leaflet jadi kompetisi
+        internal — dari luar peta cuma satu elemen di z-auto.
+    --}}
+    <div id="map" class="absolute inset-0" style="isolation: isolate"></div>
+
+    {{-- Bottom sheet: detail kendaraan --}}
+    <div id="sheet" class="sheet">
+        {{-- Handle --}}
+        <div class="flex justify-center mb-2">
+            <div style="width:36px; height:4px; background:var(--ink-200); border-radius:999px"></div>
+        </div>
+
+        {{-- Header --}}
+        <div class="flex justify-between items-start mb-2.5">
+            <div class="flex items-center gap-3">
+                <div id="sheet-icon" class="flex items-center justify-center text-white"
+                     style="width:44px; height:44px; border-radius:12px; background:var(--ink-300)">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="3" y="6" width="18" height="13" rx="2"/>
+                        <path d="M3 14h18"/>
+                        <circle cx="7" cy="17" r="1.5"/>
+                        <circle cx="17" cy="17" r="1.5"/>
+                    </svg>
+                </div>
+                <div>
+                    <div id="sheet-label" class="font-extrabold" style="font-size:16px; letter-spacing:-0.3px">—</div>
+                    <div id="sheet-plate" class="mono" style="font-size:12px; color:var(--ink-400)">—</div>
+                </div>
+            </div>
+            <button onclick="closeSheet()" style="color:var(--ink-400)" aria-label="Tutup">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/>
+                    <line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        </div>
+
+        {{-- Occupancy bar --}}
+        <div style="margin: 6px 0 14px">
+            <div class="flex justify-between" style="margin-bottom:6px">
+                <div class="font-semibold" style="font-size:12.5px; color:var(--ink-500)">Kepadatan</div>
+                <div class="num font-bold" id="sheet-occ-text" style="font-size:12.5px">— / —</div>
+            </div>
+            <div class="relative overflow-hidden" style="height:10px; background:var(--ink-100); border-radius:999px">
+                <div id="sheet-occ-bar" style="width:0%; height:100%; background:var(--ink-300); border-radius:999px; transition: width 0.3s"></div>
+                {{-- Tick di 60% dan 85% --}}
+                <div class="absolute" style="left:60%; top:-2px; bottom:-2px; width:1px; background:var(--ink-300)"></div>
+                <div class="absolute" style="left:85%; top:-2px; bottom:-2px; width:1px; background:var(--ink-300)"></div>
+            </div>
+            <div class="flex justify-between" style="margin-top:6px">
+                <span id="sheet-density-badge" class="pill pill-neutral pill-lg">—</span>
+                <div class="flex items-center gap-1.5" style="font-size:11.5px; color:var(--ink-400)">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span id="sheet-updated">—</span>
+                </div>
+            </div>
+        </div>
+
+        {{-- Forecast --}}
+        <div>
+            <div class="font-bold uppercase mb-3" style="font-size:12px; color:var(--ink-500); letter-spacing:0.6px">Prediksi 5–15 Menit</div>
+            <div id="forecast-grid" class="grid grid-cols-3 gap-2">
+                <div class="border text-center col-span-3" style="border-color:var(--ink-100); border-radius:12px; padding:12px 10px; background:var(--ink-25); font-size:12px; color:var(--ink-400)">
+                    Memuat prediksi...
+                </div>
+            </div>
+            <div class="text-center" style="font-size:10.5px; color:var(--ink-400); margin-top:8px">
+                Model <span class="mono">moving_avg_v1</span> · diperbarui tiap data sensor baru masuk
+            </div>
+        </div>
     </div>
 </div>
 
-{{-- Peta Leaflet --}}
-<div id="map" style="height: calc(100vh - 200px); min-height: 400px;"></div>
+
+@include('passenger.partials.tab-bar', [])
 
 @push('scripts')
 <script>
-    // --- Konfigurasi ---
-    const ROUTE_ID = {{ $route->id }};
-    const POLL_INTERVAL_MS = 5000; // selaras dengan pola polling di API Contract
+const ROUTE_ID    = {{ $route->id }};
+const ROUTE_CODE  = @json($route->code);
+const ROUTE_COLOR = @json($route->color);
+const POLL_MS     = 5000;
 
-    // --- Inisialisasi peta ---
-    const map = L.map('map').setView([-6.18, 106.83], 12);
+// === Inisialisasi peta ===
+const map = L.map('map', { zoomControl: true, preferCanvas: true });
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+}).addTo(map);
 
-    // Tile OpenStreetMap = titik integrasi TI-5
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; OpenStreetMap',
-        maxZoom: 18,
-    }).addTo(map);
+let stops = [];
+const vehicleMarkers = new Map();
+let selectedVehicleId = null;
+const forecastCache = new Map();
 
-    let stops = [];
-    const vehicleMarkers = new Map(); // vehicleId -> L.circleMarker
+// === Helpers ===
+function densityLevel(ratio) {
+    if (ratio === null || ratio === undefined || isNaN(ratio)) return null;
+    if (ratio < 0.6)  return 'low';
+    if (ratio < 0.85) return 'med';
+    return 'high';
+}
+function densityLabel(level) {
+    return ({ low: 'Lengang', med: 'Sedang', high: 'Padat' })[level] || 'Tidak ada data';
+}
+function makeBusIcon(level, percentage, selected) {
+    const lvl = level || 'unknown';
+    const text = percentage !== null && percentage !== undefined ? Math.round(percentage) : '—';
+    return L.divIcon({
+        className: '',
+        html: `<div class="bus-marker ${lvl} ${selected ? 'selected' : ''}">${text}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+    });
+}
+function makeStopIcon(isMajor) {
+    return L.divIcon({
+        className: '',
+        html: `<div class="stop-marker ${isMajor ? 'major' : ''}"></div>`,
+        iconSize:   isMajor ? [16, 16] : [12, 12],
+        iconAnchor: isMajor ? [8, 8]   : [6, 6]
+    });
+}
 
-    // --- Helper warna & label ---
-    function colorForLevel(level) {
-        return ({
-            'low':         '#22c55e',
-            'medium':      '#eab308',
-            'high':        '#ef4444',
-            'overcrowded': '#7f1d1d',
-        })[level] || '#94a3b8';
+// === Muat halte (sekali, di awal) ===
+async function loadStops() {
+    const res = await fetch(`/api/v1/routes/${ROUTE_ID}/stops`);
+    const json = await res.json();
+    if (!json.success) return;
+    stops = json.data;
+
+    // Polyline rute dengan halo putih di belakang
+    if (stops.length >= 2) {
+        const latlngs = stops.map(s => [s.latitude, s.longitude]);
+        L.polyline(latlngs, { color: '#fff', weight: 9, opacity: 0.9 }).addTo(map);
+        L.polyline(latlngs, { color: ROUTE_COLOR, weight: 5, opacity: 0.85, lineJoin: 'round' }).addTo(map);
     }
 
-    function labelForLevel(level) {
-        return ({
-            'low':         'Lengang',
-            'medium':      'Sedang',
-            'high':        'Padat',
-            'overcrowded': 'Overcrowded',
-        })[level] || 'Tidak ada data';
-    }
-
-    // --- Memuat halte (sekali, saat halaman dibuka) ---
-    async function loadStops() {
-        const res = await fetch(`/api/v1/routes/${ROUTE_ID}/stops`);
-        const json = await res.json();
-        if (!json.success) {
-            console.error('Gagal memuat halte:', json);
-            return;
-        }
-        stops = json.data;
-
-        // Render setiap halte sebagai titik kecil abu-abu
-        stops.forEach(stop => {
-            L.circleMarker([stop.latitude, stop.longitude], {
-                radius: 5,
-                fillColor: '#64748b',
-                color: '#fff',
-                weight: 2,
-                opacity: 1,
-                fillOpacity: 0.9,
-            })
-            .bindTooltip(stop.name, { direction: 'top', offset: [0, -8] })
+    // Halte: halte pertama & terakhir di-tandai "major" (visual berbeda)
+    stops.forEach((s, i) => {
+        const isMajor = (i === 0 || i === stops.length - 1);
+        L.marker([s.latitude, s.longitude], { icon: makeStopIcon(isMajor) })
+            .bindTooltip(s.name, { direction: 'top', offset: [0, -6] })
             .addTo(map);
+    });
+
+    // Fit map ke bounding box halte
+    if (stops.length > 0) {
+        const bounds = L.latLngBounds(stops.map(s => [s.latitude, s.longitude]));
+        map.fitBounds(bounds.pad(0.15));
+    }
+}
+
+/**
+ * SISTEM ANIMASI POSISI ARMADA
+ *
+ * Pendekatan: tiap armada punya "progress" 0..1 sepanjang rute (polyline halte).
+ *   - 0   = di halte pertama
+ *   - 0.5 = di tengah rute
+ *   - 1   = di halte terakhir
+ *
+ * Saat progress mencapai batas (0 atau 1), arah dibalik — armada bouncing/round-trip
+ * mengikuti pola TransJakarta sungguhan yang bolak-balik.
+ *
+ * PENTING: ini animasi KOSMETIK menyusuri polyline, BUKAN tracking GPS sungguhan.
+ * Sistem CrowdEase melacak kepadatan via sensor IoT (pintu/kamera). Posisi sebenarnya
+ * dari armada perlu integrasi GPS terpisah — di luar scope sistem ini.
+ *
+ * Yang REAL di sini adalah:
+ *   - Persentase di dalam marker (data sensor IoT live)
+ *   - Warna marker berdasarkan level kepadatan
+ *   - Prediksi 5/10/15 menit di bottom sheet
+ *
+ * Yang ILUSTRATIF:
+ *   - Posisi marker (animasi mengikuti polyline)
+ *   - ETA di halaman detail halte (dihitung dari sequence)
+ */
+const vehicleProgress = new Map(); // vehicle.id -> { progress, speed, direction }
+
+function initProgress(vehicleId) {
+    if (vehicleProgress.has(vehicleId)) return vehicleProgress.get(vehicleId);
+    // PRNG sederhana berbasis ID supaya posisi awal deterministik tapi tersebar
+    const r = ((vehicleId * 1664525 + 1013904223) >>> 0) / 4294967296;
+    const r2 = ((vehicleId * 22695477 + 1) >>> 0) / 4294967296;
+    const p = {
+        progress: r,                                  // posisi awal 0..1 (tersebar)
+        speed: 0.0010 + r2 * 0.0008,                  // kecepatan/tick (50ms); ~30-50 dtk full traversal
+        direction: r > 0.5 ? 1 : -1                   // setengah ke depan, setengah ke belakang
+    };
+    vehicleProgress.set(vehicleId, p);
+    return p;
+}
+
+/**
+ * Konversi progress (0..1) ke koordinat lat/lng pada polyline halte.
+ * Interpolasi linear antar 2 halte berdekatan.
+ */
+function getPolylinePosition(progress) {
+    if (stops.length < 2) {
+        // Edge case: kurang dari 2 halte, kembalikan halte pertama atau null
+        return stops.length === 1 ? [stops[0].latitude, stops[0].longitude] : null;
+    }
+    const segments = stops.length - 1;
+    const segPos = Math.max(0, Math.min(1, progress)) * segments;
+    const segIdx = Math.min(Math.floor(segPos), segments - 1);
+    const segT = segPos - segIdx;
+    const a = stops[segIdx];
+    const b = stops[segIdx + 1];
+    return [
+        a.latitude  + (b.latitude  - a.latitude)  * segT,
+        a.longitude + (b.longitude - a.longitude) * segT
+    ];
+}
+
+/**
+ * Animation loop: dipanggil tiap 50ms (~20fps) untuk menggeser semua marker.
+ * Polling (5 dtk) hanya mengupdate IKON (warna/persentase), tidak posisi.
+ * Separation of concerns: polling = data, animation = motion.
+ */
+function animateMarkers() {
+    vehicleMarkers.forEach((marker, id) => {
+        const p = vehicleProgress.get(id);
+        if (!p) return;
+        p.progress += p.speed * p.direction;
+        // Bounce di ujung rute
+        if (p.progress >= 1) { p.progress = 1; p.direction = -1; }
+        else if (p.progress <= 0) { p.progress = 0; p.direction = 1; }
+        const pos = getPolylinePosition(p.progress);
+        if (pos) marker.setLatLng(pos);
+    });
+}
+
+// === Polling armada ===
+async function pollVehicles() {
+    flashLive();
+    try {
+        const res = await fetch(`/api/v1/routes/${ROUTE_ID}/vehicles`);
+        const json = await res.json();
+        if (!json.success) return;
+
+        const vehicles = json.data;
+        const seen = new Set();
+
+        vehicles.forEach(v => {
+            seen.add(v.id);
+            const progress = initProgress(v.id);
+
+            const ratio = v.latest_density ? parseFloat(v.latest_density.occupancy_ratio) : null;
+            const level = densityLevel(ratio);
+            const pct = ratio !== null ? ratio * 100 : null;
+            const isSel = selectedVehicleId === v.id;
+
+            let marker = vehicleMarkers.get(v.id);
+            if (marker) {
+                // Hanya update ikon (data); posisi di-handle animateMarkers
+                marker.setIcon(makeBusIcon(level, pct, isSel));
+                marker.setZIndexOffset(isSel ? 1000 : 0);
+                marker.vehicleData = v;
+            } else {
+                // Marker baru: tempatkan di posisi awal sesuai progress
+                const initialPos = getPolylinePosition(progress.progress);
+                if (!initialPos) return;
+                marker = L.marker(initialPos, {
+                    icon: makeBusIcon(level, pct, isSel),
+                    zIndexOffset: isSel ? 1000 : 0
+                });
+                marker.vehicleData = v;
+                marker.on('click', () => openSheet(marker.vehicleData));
+                marker.addTo(map);
+                vehicleMarkers.set(v.id, marker);
+            }
         });
 
-        // Sesuaikan zoom & posisi peta ke bounding box halte koridor ini
-        if (stops.length > 0) {
-            const bounds = L.latLngBounds(stops.map(s => [s.latitude, s.longitude]));
-            map.fitBounds(bounds, { padding: [60, 60] });
+        // Hapus marker armada yang sudah tidak muncul (juga buang progress-nya)
+        for (const [id, m] of vehicleMarkers) {
+            if (!seen.has(id)) {
+                map.removeLayer(m);
+                vehicleMarkers.delete(id);
+                vehicleProgress.delete(id);
+            }
         }
+
+        // Update isi sheet bila terbuka untuk salah satu armada yang baru di-poll
+        if (selectedVehicleId !== null) {
+            const updated = vehicles.find(v => v.id === selectedVehicleId);
+            if (updated) updateSheetContent(updated);
+        }
+
+        // Update stats di header overlay
+        document.getElementById('corridor-stats').textContent =
+            `${stops.length} halte · ${vehicles.length} bus`;
+
+        // Timestamp
+        if (json.meta && json.meta.server_time) {
+            const dt = new Date(json.meta.server_time);
+            document.getElementById('updated-text').textContent =
+                'Diperbarui ' + dt.toLocaleTimeString('id-ID', {
+                    hour: '2-digit', minute: '2-digit', second: '2-digit'
+                });
+        }
+    } catch (e) {
+        console.error('Polling gagal:', e);
+    }
+}
+
+function flashLive() {
+    const p = document.getElementById('live-pill');
+    if (!p) return;
+    p.style.transform = 'scale(1.05)';
+    setTimeout(() => p.style.transform = '', 200);
+}
+
+// === Bottom sheet ===
+function openSheet(vehicle) {
+    selectedVehicleId = vehicle.id;
+    refreshSelectedHighlight();
+    updateSheetContent(vehicle);
+    document.getElementById('sheet').classList.add('open');
+    loadForecast(vehicle.id, vehicle.capacity);
+}
+
+function closeSheet() {
+    selectedVehicleId = null;
+    refreshSelectedHighlight();
+    document.getElementById('sheet').classList.remove('open');
+}
+
+function refreshSelectedHighlight() {
+    vehicleMarkers.forEach((m, id) => {
+        const v = m.vehicleData;
+        const ratio = v.latest_density ? parseFloat(v.latest_density.occupancy_ratio) : null;
+        const lvl = densityLevel(ratio);
+        const pct = ratio !== null ? ratio * 100 : null;
+        const sel = selectedVehicleId === id;
+        m.setIcon(makeBusIcon(lvl, pct, sel));
+        m.setZIndexOffset(sel ? 1000 : 0);
+    });
+}
+
+function updateSheetContent(v) {
+    document.getElementById('sheet-label').textContent = v.plate_number;
+    document.getElementById('sheet-plate').textContent = `Kapasitas ${v.capacity} · Koridor ${ROUTE_CODE}`;
+
+    const d = v.latest_density;
+    const occText  = document.getElementById('sheet-occ-text');
+    const occBar   = document.getElementById('sheet-occ-bar');
+    const badge    = document.getElementById('sheet-density-badge');
+    const icon     = document.getElementById('sheet-icon');
+    const updated  = document.getElementById('sheet-updated');
+
+    if (d) {
+        const ratio = parseFloat(d.occupancy_ratio);
+        const pct = Math.round(ratio * 100);
+        const lvl = densityLevel(ratio);
+
+        occText.innerHTML =
+            `${d.passenger_count} / ${d.capacity_at_time} ` +
+            `<span style="color:var(--ink-400); font-weight:500">(${pct}%)</span>`;
+        occBar.style.width = Math.min(100, pct) + '%';
+        occBar.style.background = `var(--c-${lvl})`;
+
+        badge.className = `pill pill-${lvl} pill-lg`;
+        badge.innerHTML = `<span class="pill-dot pill-dot-lg" style="background:var(--c-${lvl})"></span>${densityLabel(lvl)}`;
+
+        icon.style.background = `var(--c-${lvl})`;
+
+        if (d.recorded_at) {
+            const dt = new Date(d.recorded_at);
+            updated.textContent = 'tercatat ' + dt.toLocaleTimeString('id-ID', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        }
+    } else {
+        occText.textContent = 'Belum ada data';
+        occBar.style.width = '0%';
+        occBar.style.background = 'var(--ink-300)';
+        badge.className = 'pill pill-neutral pill-lg';
+        badge.textContent = 'Tidak ada data';
+        icon.style.background = 'var(--ink-300)';
+        updated.textContent = '—';
+    }
+}
+
+async function loadForecast(vehicleId, capacity) {
+    const grid = document.getElementById('forecast-grid');
+
+    // Cache 10 detik
+    const cached = forecastCache.get(vehicleId);
+    if (cached && (Date.now() - cached.at) < 10000) {
+        renderForecast(cached.data, capacity);
+        return;
     }
 
-    /**
-     * Posisi marker armada di peta.
-     *
-     * Sistem ini melacak KEPADATAN, bukan GPS posisi armada. Sebagai
-     * visualisasi yang masuk akal, tiap armada ditempatkan di halte
-     * koridor dengan pemetaan stabil (vehicle.id -> halte ke-n).
-     *
-     * Saat presentasi, sebutkan: "Posisi marker bersifat ilustratif
-     * — sistem nyata akan terintegrasi dengan modul GPS perangkat.
-     * Yang real-time di sini adalah data kepadatannya (warna marker)."
-     */
-    function positionForVehicle(vehicle) {
-        if (stops.length === 0) return null;
-        const idx = (vehicle.id - 1) % stops.length;
-        return [stops[idx].latitude, stops[idx].longitude];
-    }
+    grid.innerHTML = `
+        <div class="col-span-3 border text-center" style="border-color:var(--ink-100); border-radius:12px; padding:12px; background:var(--ink-25); font-size:12px; color:var(--ink-400)">
+            Memuat prediksi...
+        </div>
+    `;
 
-    // --- HTML untuk popup marker armada ---
-    function popupHTML(vehicle) {
-        const d = vehicle.latest_density;
+    try {
+        const res = await fetch(`/api/v1/vehicles/${vehicleId}/forecast`);
+        const json = await res.json();
 
-        if (!d) {
-            return `
-                <div class="text-sm">
-                    <div class="font-semibold text-slate-800">${escapeHtml(vehicle.plate_number)}</div>
-                    <div class="text-slate-500 mt-1">Belum ada data kepadatan.</div>
+        if (!json.success || !json.data.forecasts || json.data.forecasts.length === 0) {
+            grid.innerHTML = `
+                <div class="col-span-3 border text-center" style="border-color:var(--ink-100); border-radius:12px; padding:12px; background:var(--ink-25); font-size:12px; color:var(--ink-400)">
+                    Belum ada prediksi untuk armada ini.
                 </div>
             `;
+            return;
         }
 
-        const pct = Math.round(d.occupancy_ratio * 100);
-        const color = colorForLevel(d.occupancy_level);
-
-        return `
-            <div class="text-sm">
-                <div class="font-semibold text-slate-800">${escapeHtml(vehicle.plate_number)}</div>
-                <div class="flex items-center gap-3 mt-2">
-                    <div class="text-3xl font-bold leading-none" style="color:${color}">${pct}%</div>
-                    <div class="text-xs text-slate-600 leading-tight">
-                        ${d.passenger_count} / ${d.capacity_at_time} penumpang<br>
-                        <span class="font-medium" style="color:${color}">${labelForLevel(d.occupancy_level)}</span>
-                    </div>
-                </div>
-                <button onclick="loadForecast(${vehicle.id})"
-                        id="forecast-btn-${vehicle.id}"
-                        class="mt-3 text-xs text-blue-600 hover:underline">
-                    Lihat prediksi 5–15 menit →
-                </button>
-                <div id="forecast-${vehicle.id}" class="mt-2"></div>
+        forecastCache.set(vehicleId, { data: json.data, at: Date.now() });
+        renderForecast(json.data, capacity);
+    } catch (e) {
+        grid.innerHTML = `
+            <div class="col-span-3 text-center" style="font-size:12px; color:var(--c-high); padding:10px">
+                Gagal memuat prediksi.
             </div>
         `;
     }
+}
 
-    /**
-     * Lazy-load forecast saat tombol di popup di-klik.
-     * Memanggil endpoint /vehicles/{id}/forecast.
-     */
-    async function loadForecast(vehicleId) {
-        const btn = document.getElementById(`forecast-btn-${vehicleId}`);
-        const target = document.getElementById(`forecast-${vehicleId}`);
-        if (!target) return;
+function renderForecast(data, capacity) {
+    const grid = document.getElementById('forecast-grid');
+    const cap = capacity || 60;
 
-        if (btn) btn.style.display = 'none';
-        target.innerHTML = '<span class="text-xs text-slate-500">Memuat prediksi...</span>';
-
-        try {
-            const res = await fetch(`/api/v1/vehicles/${vehicleId}/forecast`);
-            const json = await res.json();
-
-            if (!json.success || !json.data.forecasts || json.data.forecasts.length === 0) {
-                target.innerHTML = '<span class="text-xs text-slate-500">Belum ada prediksi untuk armada ini.</span>';
-                return;
-            }
-
-            target.innerHTML = `
-                <div class="bg-slate-50 rounded-md p-2 text-xs mt-1 space-y-1">
-                    ${json.data.forecasts.map(f => `
-                        <div class="flex items-center justify-between">
-                            <span class="text-slate-500">+${f.minutes_ahead} menit</span>
-                            <span class="font-medium text-slate-800">~${f.predicted_count} penumpang</span>
-                        </div>
-                    `).join('')}
-                    <div class="text-[10px] text-slate-400 pt-1 border-t border-slate-200">
-                        Model: ${escapeHtml(json.data.model_version || '—')}
-                    </div>
+    grid.innerHTML = data.forecasts.map(f => {
+        const ratio = f.predicted_count / cap;
+        const lvl = densityLevel(ratio);
+        const pct = Math.round(ratio * 100);
+        return `
+            <div class="border text-center" style="border-color:var(--ink-100); border-radius:12px; padding:12px 10px; background:#fff">
+                <div class="font-semibold" style="font-size:11px; color:var(--ink-400)">+${f.minutes_ahead} mnt</div>
+                <div class="font-extrabold num" style="font-size:20px; margin-top:4px">~${f.predicted_count}</div>
+                <div style="margin-top:6px">
+                    <span class="pill pill-${lvl}">
+                        <span class="pill-dot" style="background:var(--c-${lvl})"></span>
+                        ${pct}%
+                    </span>
                 </div>
-            `;
-        } catch (e) {
-            console.error('Forecast fetch failed:', e);
-            target.innerHTML = '<span class="text-xs text-red-500">Gagal memuat prediksi.</span>';
-        }
-    }
+            </div>
+        `;
+    }).join('');
+}
 
-    // --- Polling armada setiap 5 detik (endpoint utama TI-3) ---
-    async function pollVehicles() {
-        flashLive();
+// === Boot ===
+(async () => {
+    await loadStops();
+    await pollVehicles();
+    setInterval(pollVehicles, POLL_MS);
 
-        try {
-            const res = await fetch(`/api/v1/routes/${ROUTE_ID}/vehicles`);
-            const json = await res.json();
-            if (!json.success) return;
-
-            const seenIds = new Set();
-
-            json.data.forEach(vehicle => {
-                seenIds.add(vehicle.id);
-
-                const pos = positionForVehicle(vehicle);
-                if (!pos) return;
-
-                const color = colorForLevel(vehicle.latest_density?.occupancy_level);
-                let marker = vehicleMarkers.get(vehicle.id);
-
-                if (marker) {
-                    marker.setLatLng(pos);
-                    marker.setStyle({ fillColor: color });
-                    // Jangan refresh isi popup kalau sedang dibuka — biar
-                    // tombol "Lihat prediksi" yang sudah di-klik tidak hilang.
-                    if (!marker.isPopupOpen()) {
-                        marker.setPopupContent(popupHTML(vehicle));
-                    }
-                } else {
-                    marker = L.circleMarker(pos, {
-                        radius: 11,
-                        fillColor: color,
-                        color: '#fff',
-                        weight: 3,
-                        opacity: 1,
-                        fillOpacity: 0.95,
-                    })
-                    .bindPopup(popupHTML(vehicle), { maxWidth: 300 })
-                    .addTo(map);
-                    vehicleMarkers.set(vehicle.id, marker);
-                }
-            });
-
-            // Bersihkan marker armada yang sudah tidak muncul lagi
-            for (const [id, marker] of vehicleMarkers) {
-                if (!seenIds.has(id)) {
-                    map.removeLayer(marker);
-                    vehicleMarkers.delete(id);
-                }
-            }
-
-            // Update label "diperbarui kapan"
-            if (json.meta?.server_time) {
-                const dt = new Date(json.meta.server_time);
-                document.getElementById('last-updated').textContent =
-                    'Diperbarui ' + dt.toLocaleTimeString('id-ID', {
-                        hour: '2-digit', minute: '2-digit', second: '2-digit'
-                    });
-            }
-        } catch (e) {
-            console.error('Polling failed:', e);
-        }
-    }
-
-    /** Beri "kedip" sebentar pada dot live untuk indikasi polling. */
-    function flashLive() {
-        const dot = document.getElementById('live-dot');
-        if (!dot) return;
-        dot.classList.remove('bg-green-500');
-        dot.classList.add('bg-green-300');
-        setTimeout(() => {
-            dot.classList.remove('bg-green-300');
-            dot.classList.add('bg-green-500');
-        }, 200);
-    }
-
-    function escapeHtml(s) {
-        if (s === null || s === undefined) return '';
-        const div = document.createElement('div');
-        div.textContent = String(s);
-        return div.innerHTML;
-    }
-
-    // --- Boot ---
-    (async () => {
-        await loadStops();
-        await pollVehicles();
-        setInterval(pollVehicles, POLL_INTERVAL_MS);
-    })();
+    // Animation loop dimulai SETELAH halte dan armada awal di-load,
+    // supaya getPolylinePosition() punya data halte untuk interpolasi.
+    setInterval(animateMarkers, 50); // ~20fps; halus tanpa membebani CPU
+})();
 </script>
 @endpush
 
