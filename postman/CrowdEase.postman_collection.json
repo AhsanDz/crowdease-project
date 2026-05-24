@@ -1,0 +1,1347 @@
+{
+  "info": {
+    "_postman_id": "19cdf689-e4ca-49de-b668-ffdd9b562119",
+    "name": "CrowdEase API",
+    "description": "# CrowdEase API Collection\n\nCollection lengkap untuk testing API CrowdEase end-to-end.\n\n## Urutan Test yang Disarankan\n\n1. **Folder 1 (Public)** \u2014 verifikasi data seeder masuk\n2. **Folder 3 (Operator Auth) \u2192 Login** \u2014 dapatkan token (auto-saved ke env)\n3. **Folder 2 (IoT)** \u2014 submit data sensor pakai API key seeder\n4. **Folder 4-6 (CRUD)** \u2014 testing manajemen master data\n\n## Variables yang Otomatis Diset\n\n- `operator_token` \u2014 dari respons Login\n- `first_route_id`, `first_route_code` \u2014 dari List koridor\n- `first_stop_id`, `first_vehicle_id` \u2014 dari respons terkait\n- `created_route_id`, `created_vehicle_id`, `created_stop_id` \u2014 dari respons POST\n\n## Convention\n\nSemua respons sukses pakai envelope `{success: true, data: ..., meta: ...}`.\nError pakai `{success: false, error: {code, message, details}}`.\n\nLihat docs/API_CONTRACT.md untuk spec lengkap.\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Public (Penumpang \u00b7 TI-3)",
+      "description": "Endpoint untuk aplikasi penumpang. Tidak butuh auth. Rate limit 60/menit/IP.",
+      "item": [
+        {
+          "name": "List koridor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api_v1}}/routes",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "routes"
+              ]
+            },
+            "description": "Daftar koridor aktif dengan jumlah halte dan armada."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});",
+                  "",
+                  "// Simpan id koridor pertama untuk request lain",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.length > 0) {",
+                  "    pm.environment.set('first_route_id', data[0].id);",
+                  "    pm.environment.set('first_route_code', data[0].code);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detail koridor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api_v1}}/routes/{{first_route_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "routes",
+                "{{first_route_id}}"
+              ]
+            },
+            "description": "Detail satu koridor."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List halte di koridor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api_v1}}/routes/{{first_route_id}}/stops",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "routes",
+                "{{first_route_id}}",
+                "stops"
+              ]
+            },
+            "description": "Halte pada koridor, urut sequence."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});",
+                  "",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.length > 0) pm.environment.set('first_stop_id', data[0].id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "List armada di koridor (polling utama)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api_v1}}/routes/{{first_route_id}}/vehicles",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "routes",
+                "{{first_route_id}}",
+                "vehicles"
+              ]
+            },
+            "description": "Endpoint polling utama yang dipanggil app penumpang tiap 5 detik. Mengembalikan armada beserta kepadatan terkini (latest_density) dan meta.server_time untuk display 'Diperbarui jam X'."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});",
+                  "",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.length > 0) pm.environment.set('first_vehicle_id', data[0].id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Forecast armada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api_v1}}/vehicles/{{first_vehicle_id}}/forecast",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "vehicles",
+                "{{first_vehicle_id}}",
+                "forecast"
+              ]
+            },
+            "description": "Prediksi kepadatan 5/10/15 menit ke depan untuk satu armada. Dihasilkan ForecastingService dengan model moving_avg_v1."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "History kepadatan armada",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{api_v1}}/vehicles/{{first_vehicle_id}}/density/history?minutes=30",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "vehicles",
+                "{{first_vehicle_id}}",
+                "density",
+                "history"
+              ],
+              "query": [
+                {
+                  "key": "minutes",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Riwayat density log armada beberapa menit terakhir."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. IoT Sensor (TI-1)",
+      "description": "Endpoint untuk perangkat IoT mengirim data sensor. Auth via X-API-Key header. Rate limit 600/menit/key.",
+      "item": [
+        {
+          "name": "Health check API key",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-API-Key",
+                "value": "{{iot_api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/iot/check",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "iot",
+                "check"
+              ]
+            },
+            "description": "Cek apakah API key valid. Berguna untuk perangkat IoT verifikasi koneksi saat boot."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kirim data sensor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{iot_api_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/sensors/readings",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "sensors",
+                "readings"
+              ]
+            },
+            "description": "Submit satu pembacaan sensor (penumpang naik/turun). Bila kepadatan tinggi, sistem akan trigger forecast update dan webhook outbound (jika TI-2 aktif).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicle_id\": 1,\n  \"passenger_count\": 35,\n  \"capacity_at_time\": 60,\n  \"recorded_at\": \"2026-05-23T10:32:15+07:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Returns density log with computed ratio', function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data).to.have.property('occupancy_ratio');",
+                  "    pm.expect(parseFloat(data.occupancy_ratio)).to.be.within(0, 2);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Operator Auth (TI-4)",
+      "description": "Endpoint login/logout untuk dasbor operator. Login memakai email+password (seeder: operator@crowdease.test / secret123). Pre-request: tidak ada. Test script LOGIN otomatis menyimpan token ke environment variable {{operator_token}}.",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/auth/login",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login dan dapatkan bearer token Sanctum. **Penting**: Test script di sini auto-set {{operator_token}}, jadi request berikutnya di folder operator otomatis pakai token ini.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"operator@crowdease.test\",\n  \"password\": \"secret123\",\n  \"device_name\": \"postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Returns token', function () {",
+                  "    const data = pm.response.json().data;",
+                  "    pm.expect(data).to.have.property('token');",
+                  "});",
+                  "",
+                  "// Simpan token ke environment untuk request berikutnya",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.token) {",
+                  "    pm.environment.set('operator_token', data.token);",
+                  "    console.log('Token disimpan ke {{operator_token}}');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Profil saya",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/auth/me",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Detail user yang sedang login."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/auth/logout",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Cabut token sesi sekarang. Setelah logout, request berikutnya yang butuh auth akan 401."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "// Bersihkan token dari environment",
+                  "pm.environment.unset('operator_token');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Operator Routes/Koridor CRUD (TI-4)",
+      "description": "Manajemen master data koridor. Wajib bearer token operator.",
+      "item": [
+        {
+          "name": "List koridor",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/routes?search=&per_page=20&page=1",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "routes"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Filter by code/name"
+                },
+                {
+                  "key": "per_page",
+                  "value": "20",
+                  "disabled": true,
+                  "description": "Page size"
+                },
+                {
+                  "key": "page",
+                  "value": "1",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Termasuk koridor non-aktif (admin perlu lihat semua)."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buat koridor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/routes",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "routes"
+              ]
+            },
+            "description": "Buat koridor baru. is_active default true.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"K99\",\n  \"name\": \"Demo Postman Corridor\",\n  \"color\": \"#9333EA\",\n  \"is_active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});",
+                  "",
+                  "// Simpan ID koridor baru ke env untuk dipakai PUT/DELETE",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) {",
+                  "    pm.environment.set('created_route_id', data.id);",
+                  "    console.log('Created route id:', data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detail koridor",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/routes/{{created_route_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "routes",
+                "{{created_route_id}}"
+              ]
+            },
+            "description": "Detail koridor dengan jumlah halte & armada."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update koridor (nonaktifkan)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/routes/{{created_route_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "routes",
+                "{{created_route_id}}"
+              ]
+            },
+            "description": "Contoh: set is_active=false untuk 'menghilangkan' dari app penumpang tanpa hard delete.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false,\n  \"name\": \"Demo (Nonaktif)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hapus koridor (sukses)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/routes/{{created_route_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "routes",
+                "{{created_route_id}}"
+              ]
+            },
+            "description": "Aman karena koridor baru ini belum punya halte/armada."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hapus K1 (harus 409)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/routes/1",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "routes",
+                "1"
+              ]
+            },
+            "description": "Demonstrasi safety check: K1 punya halte+armada, jadi DELETE harus return HTTP 409 dengan code HAS_DEPENDENCIES."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 409 Conflict', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "",
+                  "pm.test('Error code HAS_DEPENDENCIES', function () {",
+                  "    const err = pm.response.json().error;",
+                  "    pm.expect(err.code).to.eql('HAS_DEPENDENCIES');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Operator Vehicles/Armada CRUD (TI-4)",
+      "description": "Manajemen master data armada bus.",
+      "item": [
+        {
+          "name": "List armada",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/vehicles?route_id=1&status=active&search=",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "vehicles"
+              ],
+              "query": [
+                {
+                  "key": "route_id",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "active",
+                  "disabled": true,
+                  "description": "active|inactive|maintenance"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true,
+                  "description": "Cari nomor plat"
+                }
+              ]
+            },
+            "description": "Filter optional: ?route_id=, ?status=, ?search=plate"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buat armada",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/vehicles",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "vehicles"
+              ]
+            },
+            "description": "Daftarkan armada baru ke salah satu koridor.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route_id\": 1,\n  \"plate_number\": \"B 9999 PMN\",\n  \"capacity\": 60,\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});",
+                  "",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('created_vehicle_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detail armada",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/vehicles/{{created_vehicle_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "vehicles",
+                "{{created_vehicle_id}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update armada (maintenance)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/vehicles/{{created_vehicle_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "vehicles",
+                "{{created_vehicle_id}}"
+              ]
+            },
+            "description": "Set status ke 'maintenance' (mis. bus servis).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"maintenance\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hapus armada",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/vehicles/{{created_vehicle_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "vehicles",
+                "{{created_vehicle_id}}"
+              ]
+            },
+            "description": "Aman selama armada baru ini belum punya density_logs."
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Operator Stops/Halte CRUD (TI-4)",
+      "description": "Manajemen master data halte. Halte aman di-hard-delete (no FK dari tabel lain).",
+      "item": [
+        {
+          "name": "List halte",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/stops?route_id=1&search=",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "stops"
+              ],
+              "query": [
+                {
+                  "key": "route_id",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Filter optional: ?route_id=, ?search=name"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buat halte",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/stops",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "stops"
+              ]
+            },
+            "description": "Sequence harus unik per koridor. Contoh: halte sequence 99 di koridor 1.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"route_id\": 1,\n  \"name\": \"Halte Demo Postman\",\n  \"latitude\": -6.2088,\n  \"longitude\": 106.8456,\n  \"sequence\": 99\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});",
+                  "",
+                  "const data = pm.response.json().data;",
+                  "if (data && data.id) pm.environment.set('created_stop_id', data.id);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detail halte",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/stops/{{created_stop_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "stops",
+                "{{created_stop_id}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update halte",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/stops/{{created_stop_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "stops",
+                "{{created_stop_id}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Halte Demo (Updated)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "Hapus halte",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{operator_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{api_v1}}/admin/stops/{{created_stop_id}}",
+              "host": [
+                "{{api_v1}}"
+              ],
+              "path": [
+                "admin",
+                "stops",
+                "{{created_stop_id}}"
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 2xx', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "});",
+                  "",
+                  "pm.test('Envelope success=true', function () {",
+                  "    const json = pm.response.json();",
+                  "    pm.expect(json.success).to.eql(true);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": []
+}

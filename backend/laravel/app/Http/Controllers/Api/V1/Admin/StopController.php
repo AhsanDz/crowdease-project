@@ -3,111 +3,110 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\Route;
+use App\Http\Requests\Api\V1\Admin\StoreStopRequest;
+use App\Http\Requests\Api\V1\Admin\UpdateStopRequest;
+use App\Http\Resources\Api\V1\StopResource;
 use App\Models\Stop;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * StopController (Admin)
+ * Endpoint manajemen Halte untuk dasbor operator (Titik Integrasi TI-4).
  *
- * GET    /api/v1/admin/routes/{route}/stops          → list halte dalam koridor
- * POST   /api/v1/admin/routes/{route}/stops          → tambah halte
- * PUT    /api/v1/admin/routes/{route}/stops/{stop}   → update halte
- * DELETE /api/v1/admin/routes/{route}/stops/{stop}   → hapus halte
+ * Halte aman di-hard-delete (tidak ada FK dari tabel lain yang mereferensi).
  */
 class StopController extends Controller
 {
-    public function index(Route $route): JsonResponse
+    /**
+     * GET /api/v1/admin/stops
+     *
+     * Filter:
+     *   - ?route_id=N : halte di koridor tertentu (urut sequence)
+     *   - ?search=    : cari berdasarkan nama halte
+     *   - ?per_page=  : ukuran halaman (default 20)
+     */
+    public function index(Request $request): JsonResponse
     {
-        $stops = $route->stops()
-            ->ordered()
-            ->get()
-            ->map(fn (Stop $s) => $this->formatStop($s));
+        $query = Stop::query();
 
-        return response()->json(['data' => $stops]);
+        if ($request->filled('route_id')) {
+            $query->where('route_id', $request->integer('route_id'));
+        }
+
+        if ($request->filled('search')) {
+            $query->where('name', 'like', '%' . $request->string('search') . '%');
+        }
+
+        // Bila ada filter route_id, urutkan sesuai sequence;
+        // jika tidak, urutkan berdasarkan koridor lalu sequence.
+        if ($request->filled('route_id')) {
+            $query->orderBy('sequence');
+        } else {
+            $query->orderBy('route_id')->orderBy('sequence');
+        }
+
+        $perPage = (int) $request->integer('per_page', 20);
+        $stops   = $query->paginate($perPage);
+
+        return ApiResponse::success(
+            StopResource::collection($stops),
+            ['pagination' => $this->paginationMeta($stops)]
+        );
     }
 
-    public function store(Request $request, Route $route): JsonResponse
+    /**
+     * POST /api/v1/admin/stops
+     */
+    public function store(StoreStopRequest $request): JsonResponse
     {
-        $validated = $request->validate([
-            'name'      => ['required', 'string', 'max:255'],
-            'sequence'  => ['required', 'integer', 'min:1'],
-            'latitude'  => ['required', 'numeric', 'between:-90,90'],
-            'longitude' => ['required', 'numeric', 'between:-180,180'],
-        ]);
+        $stop = Stop::create($request->validated());
 
-        // Pastikan sequence unik dalam koridor ini
-        $exists = $route->stops()->where('sequence', $validated['sequence'])->exists();
-        if ($exists) {
-            return response()->json([
-                'message' => "Urutan halte {$validated['sequence']} sudah ada di koridor ini.",
-            ], 422);
-        }
-
-        $stop = $route->stops()->create($validated);
-
-        return response()->json([
-            'message' => 'Halte berhasil ditambahkan.',
-            'data'    => $this->formatStop($stop),
-        ], 201);
+        return ApiResponse::success(new StopResource($stop), null, 201);
     }
 
-    public function update(Request $request, Route $route, Stop $stop): JsonResponse
+    /**
+     * GET /api/v1/admin/stops/{stop}
+     */
+    public function show(Stop $stop): JsonResponse
     {
-        // Pastikan stop ini milik route yang benar
-        if ($stop->route_id !== $route->id) {
-            return response()->json(['message' => 'Halte tidak ditemukan di koridor ini.'], 404);
-        }
-
-        $validated = $request->validate([
-            'name'      => ['sometimes', 'string', 'max:255'],
-            'sequence'  => ['sometimes', 'integer', 'min:1'],
-            'latitude'  => ['sometimes', 'numeric', 'between:-90,90'],
-            'longitude' => ['sometimes', 'numeric', 'between:-180,180'],
-        ]);
-
-        if (isset($validated['sequence']) && $validated['sequence'] !== $stop->sequence) {
-            $exists = $route->stops()
-                ->where('sequence', $validated['sequence'])
-                ->where('id', '!=', $stop->id)
-                ->exists();
-
-            if ($exists) {
-                return response()->json([
-                    'message' => "Urutan halte {$validated['sequence']} sudah dipakai.",
-                ], 422);
-            }
-        }
-
-        $stop->update($validated);
-
-        return response()->json([
-            'message' => 'Halte berhasil diperbarui.',
-            'data'    => $this->formatStop($stop->fresh()),
-        ]);
+        return ApiResponse::success(new StopResource($stop));
     }
 
-    public function destroy(Route $route, Stop $stop): JsonResponse
+    /**
+     * PUT/PATCH /api/v1/admin/stops/{stop}
+     */
+    public function update(UpdateStopRequest $request, Stop $stop): JsonResponse
     {
-        if ($stop->route_id !== $route->id) {
-            return response()->json(['message' => 'Halte tidak ditemukan di koridor ini.'], 404);
-        }
+        $stop->update($request->validated());
 
+        return ApiResponse::success(new StopResource($stop));
+    }
+
+    /**
+     * DELETE /api/v1/admin/stops/{stop}
+     *
+     * Hard delete tanpa safety check — stops tidak direferensikan
+     * tabel lain via FK (kecuali untuk display di peta).
+     */
+    public function destroy(Stop $stop): JsonResponse
+    {
         $stop->delete();
 
-        return response()->json(['message' => 'Halte berhasil dihapus.']);
+        return ApiResponse::success(['deleted_id' => $stop->id]);
     }
 
-    private function formatStop(Stop $stop): array
+    /**
+     * @param  \Illuminate\Pagination\LengthAwarePaginator<int, mixed>  $paginator
+     * @return array<string, int>
+     */
+    private function paginationMeta($paginator): array
     {
         return [
-            'id'          => $stop->id,
-            'name'        => $stop->name,
-            'sequence'    => $stop->sequence,
-            'latitude'    => $stop->latitude,
-            'longitude'   => $stop->longitude,
-            'coordinates' => $stop->coordinates,
+            'page'      => $paginator->currentPage(),
+            'per_page'  => $paginator->perPage(),
+            'total'     => $paginator->total(),
+            'last_page' => $paginator->lastPage(),
         ];
     }
 }

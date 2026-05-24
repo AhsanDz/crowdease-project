@@ -3,116 +3,139 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\Admin\StoreRouteRequest;
+use App\Http\Requests\Api\V1\Admin\UpdateRouteRequest;
+use App\Http\Resources\Api\V1\RouteResource;
 use App\Models\Route;
+use App\Support\ApiResponse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 /**
- * RouteController (Admin)
+ * Endpoint manajemen Koridor untuk dasbor operator (Titik Integrasi TI-4).
  *
- * GET    /api/v1/admin/routes          → list semua koridor
- * POST   /api/v1/admin/routes          → tambah koridor baru
- * GET    /api/v1/admin/routes/{id}     → detail koridor + halte + bus aktif
- * PUT    /api/v1/admin/routes/{id}     → update koridor
- * DELETE /api/v1/admin/routes/{id}     → soft delete koridor
+ * Berbeda dari endpoint passenger di Api\V1\Passenger\RouteController:
+ *   - Termasuk koridor non-aktif (admin perlu lihat semua)
+ *   - Mendukung pencarian dan pagination
+ *   - CRUD lengkap dengan validasi
+ *
+ * Semua endpoint butuh auth:sanctum + throttle:operator (120/menit).
  */
 class RouteController extends Controller
 {
-    public function index(): JsonResponse
+    /**
+     * GET /api/v1/admin/routes
+     *
+     * Daftar koridor dengan pencarian opsional (?search=) dan pagination
+     * (?page=, ?per_page=, default 20).
+     */
+    public function index(Request $request): JsonResponse
     {
-        $routes = Route::withCount(['vehicles', 'activeVehicles', 'stops'])
-            ->orderBy('code')
-            ->get()
-            ->map(fn (Route $r) => $this->formatRoute($r));
+        $query = Route::query()->withCount(['stops', 'vehicles']);
 
-        return response()->json(['data' => $routes]);
-    }
-
-    public function store(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
-            'code'      => ['required', 'string', 'max:10', 'unique:routes,code'],
-            'name'      => ['required', 'string', 'max:255'],
-            'is_active' => ['sometimes', 'boolean'],
-        ]);
-
-        $route = Route::create($validated);
-
-        return response()->json([
-            'message' => 'Koridor berhasil dibuat.',
-            'data'    => $this->formatRoute($route),
-        ], 201);
-    }
-
-    public function show(Route $route): JsonResponse
-    {
-        $route->load(['stops' => fn ($q) => $q->ordered(), 'activeVehicles.latestDensityLog']);
-
-        return response()->json([
-            'data' => [
-                'id'         => $route->id,
-                'code'       => $route->code,
-                'name'       => $route->name,
-                'is_active'  => $route->is_active,
-                'stops'      => $route->stops->map(fn ($s) => [
-                    'id'        => $s->id,
-                    'name'      => $s->name,
-                    'sequence'  => $s->sequence,
-                    'latitude'  => $s->latitude,
-                    'longitude' => $s->longitude,
-                ]),
-                'vehicles'   => $route->activeVehicles->map(fn ($v) => [
-                    'id'              => $v->id,
-                    'plate_number'    => $v->plate_number,
-                    'occupancy_level' => $v->current_occupancy_level,
-                    'occupancy_ratio' => $v->current_occupancy_ratio,
-                ]),
-            ],
-        ]);
-    }
-
-    public function update(Request $request, Route $route): JsonResponse
-    {
-        $validated = $request->validate([
-            'code'      => ['sometimes', 'string', 'max:10', 'unique:routes,code,' . $route->id],
-            'name'      => ['sometimes', 'string', 'max:255'],
-            'is_active' => ['sometimes', 'boolean'],
-        ]);
-
-        $route->update($validated);
-
-        return response()->json([
-            'message' => 'Koridor berhasil diperbarui.',
-            'data'    => $this->formatRoute($route->fresh()),
-        ]);
-    }
-
-    public function destroy(Route $route): JsonResponse
-    {
-        // Cek apakah masih ada bus aktif di koridor ini
-        if ($route->activeVehicles()->exists()) {
-            return response()->json([
-                'message' => 'Tidak dapat menghapus koridor yang masih memiliki bus aktif.',
-            ], 422);
+        if ($request->filled('search')) {
+            $term = $request->string('search');
+            $query->where(function ($q) use ($term) {
+                $q->where('code', 'like', "%{$term}%")
+                  ->orWhere('name', 'like', "%{$term}%");
+            });
         }
 
-        $route->delete(); // soft delete
+        $perPage = (int) $request->integer('per_page', 20);
+        $routes  = $query->orderBy('code')->paginate($perPage);
 
-        return response()->json([
-            'message' => 'Koridor berhasil dihapus.',
-        ]);
+        return ApiResponse::success(
+            RouteResource::collection($routes),
+            ['pagination' => $this->paginationMeta($routes)]
+        );
     }
 
-    private function formatRoute(Route $route): array
+    /**
+     * POST /api/v1/admin/routes
+     *
+     * Buat koridor baru. is_active default true bila tidak dikirim.
+     * Mengembalikan 201 Created.
+     */
+    public function store(StoreRouteRequest $request): JsonResponse
+    {
+        $route = Route::create([
+            ...$request->validated(),
+            'is_active' => $request->boolean('is_active', true),
+        ]);
+
+        $route->loadCount(['stops', 'vehicles']);
+
+        return ApiResponse::success(new RouteResource($route), null, 201);
+    }
+
+    /**
+     * GET /api/v1/admin/routes/{route}
+     *
+     * Detail satu koridor lengkap dengan jumlah halte & armada.
+     */
+    public function show(Route $route): JsonResponse
+    {
+        $route->loadCount(['stops', 'vehicles']);
+
+        return ApiResponse::success(new RouteResource($route));
+    }
+
+    /**
+     * PUT/PATCH /api/v1/admin/routes/{route}
+     *
+     * Update sebagian/seluruh field koridor.
+     */
+    public function update(UpdateRouteRequest $request, Route $route): JsonResponse
+    {
+        $route->update($request->validated());
+        $route->loadCount(['stops', 'vehicles']);
+
+        return ApiResponse::success(new RouteResource($route));
+    }
+
+    /**
+     * DELETE /api/v1/admin/routes/{route}
+     *
+     * Hard delete dengan safety check: tolak jika masih ada halte/armada terkait.
+     * Operator disarankan set is_active=false untuk "menonaktifkan" koridor
+     * tanpa kehilangan riwayat data sensor.
+     */
+    public function destroy(Route $route): JsonResponse
+    {
+        $stopsCount    = $route->stops()->count();
+        $vehiclesCount = $route->vehicles()->count();
+
+        if ($stopsCount > 0 || $vehiclesCount > 0) {
+            return ApiResponse::error(
+                'HAS_DEPENDENCIES',
+                'Tidak bisa menghapus koridor: masih ada data terkait.',
+                [
+                    'stops_count'    => $stopsCount,
+                    'vehicles_count' => $vehiclesCount,
+                    'hint'           => 'Hapus halte/armada terkait dulu, atau set is_active=false untuk menonaktifkan koridor.',
+                ],
+                409
+            );
+        }
+
+        $route->delete();
+
+        return ApiResponse::success(['deleted_id' => $route->id]);
+    }
+
+    /**
+     * Bentuk metadata pagination yang konsisten untuk amplop response.
+     *
+     * @param  \Illuminate\Pagination\LengthAwarePaginator<int, mixed>  $paginator
+     * @return array<string, int>
+     */
+    private function paginationMeta($paginator): array
     {
         return [
-            'id'                   => $route->id,
-            'code'                 => $route->code,
-            'name'                 => $route->name,
-            'is_active'            => $route->is_active,
-            'total_vehicles'       => $route->vehicles_count ?? 0,
-            'active_vehicles'      => $route->active_vehicles_count ?? 0,
-            'total_stops'          => $route->stops_count ?? 0,
+            'page'      => $paginator->currentPage(),
+            'per_page'  => $paginator->perPage(),
+            'total'     => $paginator->total(),
+            'last_page' => $paginator->lastPage(),
         ];
     }
 }
