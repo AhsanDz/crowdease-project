@@ -9,14 +9,6 @@ use App\Http\Controllers\Controller;
  *
  * Auth dilakukan di sisi client (JS cek localStorage token + redirect).
  * Controller di sini cuma serve view; data semua diambil JS via API admin.
- *
- * Pendekatan client-side auth dipilih karena:
- *   1. Konsisten dengan arsitektur API-first (token-based, stateless)
- *   2. Demo TI-4 lebih eksplisit (operator UI ≠ backend API)
- *   3. Tidak perlu setup session/CSRF tambahan untuk operator
- *
- * Trade-off: token tersimpan di localStorage (rawan XSS).
- * Untuk produksi, ganti ke httpOnly cookie atau Sanctum SPA mode.
  */
 class PageController extends Controller
 {
@@ -32,16 +24,31 @@ class PageController extends Controller
         return view('operator.dashboard');
     }
 
+    /** GET /operator/routes — Fase 4: CRUD Koridor */
+    public function routes()
+    {
+        return view('operator.routes');
+    }
+
+    /** GET /operator/vehicles — Fase 4: CRUD Armada */
+    public function vehicles()
+    {
+        return view('operator.vehicles');
+    }
+
+    /** GET /operator/stops — Fase 4: CRUD Halte */
+    public function stops()
+    {
+        return view('operator.stops');
+    }
+
     /**
      * GET /operator/{page} untuk halaman yang belum di-implementasi.
-     * Tampilkan placeholder "Akan tersedia di Fase X" supaya tidak 404.
+     * Setelah Fase 4, hanya apikeys dan webhooks yang masih placeholder.
      */
     public function comingSoon(string $page)
     {
         $titles = [
-            'routes'   => ['Koridor',   'Kelola koridor TransJakarta',                'Fase 4'],
-            'vehicles' => ['Armada',    'Kelola armada bus',                          'Fase 4'],
-            'stops'    => ['Halte',     'Kelola halte beserta posisi geografis',      'Fase 4'],
             'apikeys'  => ['API Keys',  'Kelola kunci akses untuk perangkat IoT',     'Fase 5'],
             'webhooks' => ['Webhooks',  'Kelola webhook untuk notifikasi keluar',     'Fase 5'],
         ];

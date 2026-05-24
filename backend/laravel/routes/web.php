@@ -29,13 +29,15 @@ Route::prefix('operator')->name('operator.')->group(function () {
     Route::get('/login',     [OperatorPageController::class, 'login'])->name('login');
     Route::get('/dashboard', [OperatorPageController::class, 'dashboard'])->name('dashboard');
 
-    // Halaman menu yang belum di-implementasi di Fase 3.
-    // Akan diganti controller fungsional di Fase 4 (routes/vehicles/stops)
-    // dan Fase 5 (apikeys/webhooks).
+    // Fase 4: CRUD pages
+    Route::get('/routes',    [OperatorPageController::class, 'routes'])->name('routes');
+    Route::get('/vehicles',  [OperatorPageController::class, 'vehicles'])->name('vehicles');
+    Route::get('/stops',     [OperatorPageController::class, 'stops'])->name('stops');
+
+    // Fase 5 (belum): apikeys & webhooks tetap "coming-soon"
     Route::get('/{page}', [OperatorPageController::class, 'comingSoon'])
-        ->where('page', 'routes|vehicles|stops|apikeys|webhooks')
+        ->where('page', 'apikeys|webhooks')
         ->name('coming-soon');
 
-    // Operator base URL — redirect ke dashboard supaya navigasi lebih intuitif
     Route::redirect('/', '/operator/dashboard');
 });
