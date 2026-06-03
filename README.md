@@ -101,7 +101,7 @@ python simulator.py
 
 Lalu buka:
 - **Aplikasi Penumpang**: http://localhost:8000
-- **Dasbor Operator**: http://localhost:8000/admin (login: `operator@crowdease.test` / `secret123`)
+- **Dasbor Operator**: http://localhost:8000/operator (login: `operator@crowdease.test` / `secret123`)
 - **API Documentation**: http://localhost:8000/docs
 
 ## Tech Stack
@@ -123,18 +123,18 @@ Lalu buka:
 - [x] API Contract v1.0
 - [x] IoT Simulator (Python)
 - [x] Struktur repository
-- [ ] **Minggu 1**: Migrasi database, seeder, autentikasi
-- [ ] **Minggu 2**: Endpoint IoT (TI-1), endpoint admin (TI-4)
-- [ ] **Minggu 3**: Frontend penumpang dengan polling, dasbor operator
-- [ ] **Minggu 4**: Webhook outbound (TI-2), API versioning, dokumentasi, demo
+- [x] **Minggu 1**: Migrasi database, seeder, autentikasi
+- [x] **Minggu 2**: Endpoint IoT (TI-1), endpoint admin (TI-4)
+- [x] **Minggu 3**: Frontend penumpang dengan polling, dasbor operator
+- [x] **Minggu 4**: Webhook outbound (TI-2), API versioning, dokumentasi, demo
 
 ## Tim
 
 | Anggota | Peran | Tanggung Jawab |
 |---------|-------|----------------|
-| [Nama 1] | Backend Lead | API, database, auth, forecasting, webhook |
-| [Nama 2] | Frontend Lead | Aplikasi penumpang, dasbor operator |
-| [Nama 3] | Integration & QA | IoT simulator, dokumentasi, test cases |
+| Ahsan Faqih | Backend Lead | API, database, auth, forecasting, webhook |
+| Fauzi Kurniawan | Frontend Lead | Aplikasi penumpang, dasbor operator |
+| Dandy Zikri | Integration & QA | IoT simulator, dokumentasi, test cases |
 
 ## Lisensi & Atribusi
 
