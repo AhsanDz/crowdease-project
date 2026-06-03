@@ -2,66 +2,41 @@
 
 namespace App\Providers;
 
+use App\Models\DensityLog;
+use App\Observers\DensityLogObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     */
     public function register(): void
     {
         //
     }
 
-    /**
-     * Bootstrap any application services.
-     */
     public function boot(): void
     {
-        // Nonaktifkan wrapping 'data' otomatis pada JsonResource karena
-        // sistem CrowdEase memakai amplop sendiri (ApiResponse::success).
-        // Tanpa ini, respons akan double-wrap: { data: { data: ... } }.
-        JsonResource::withoutWrapping();
+        // Daftarkan observer DensityLog untuk trigger webhook outbound (TI-2)
+        DensityLog::observe(DensityLogObserver::class);
 
-        $this->configureRateLimiters();
-    }
+        // ── Rate Limiters ─────────────────────────────────────────────
+        // Dipakai oleh routes via middleware 'throttle:<name>'.
 
-    /**
-     * Definisikan tiga tier rate limiter sesuai API Contract.
-     *
-     * Dipakai di route dengan middleware:
-     *   throttle:public   -> endpoint publik (penumpang)
-     *   throttle:iot      -> endpoint IoT (X-API-Key)
-     *   throttle:operator -> endpoint operator (Sanctum)
-     */
-    protected function configureRateLimiters(): void
-    {
-        // Tier publik: 60 request per menit, dibatasi per alamat IP.
-        RateLimiter::for('public', function (Request $request) {
-            return Limit::perMinute(60)->by($request->ip());
-        });
-
-        // Tier IoT: 600 request per menit, dibatasi per API key.
-        // Key di-hash dengan sha1 agar tidak menyimpan rahasia di cache key.
-        RateLimiter::for('iot', function (Request $request) {
-            $key = $request->header('X-API-Key') ?: $request->ip();
-
-            return Limit::perMinute(600)->by('iot:' . sha1((string) $key));
-        });
-
-        // Tier operator: 120 request per menit, dibatasi per user.
-        // Jika user belum ter-resolve, jatuh ke pembatasan per IP.
+        // Operator dashboard — 120 request/menit per user
         RateLimiter::for('operator', function (Request $request) {
-            $userId = $request->user()?->id;
+            return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
+        });
 
-            return Limit::perMinute(120)->by(
-                $userId !== null ? 'op:' . $userId : $request->ip()
-            );
+        // Public endpoints (login, dll) — 30 request/menit per IP
+        RateLimiter::for('public', function (Request $request) {
+            return Limit::perMinute(30)->by($request->ip());
+        });
+
+        // IoT sensor endpoints — 600 request/menit per API key
+        RateLimiter::for('iot', function (Request $request) {
+            return Limit::perMinute(600)->by($request->header('X-API-Key', $request->ip()));
         });
     }
 }

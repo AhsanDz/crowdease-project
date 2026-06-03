@@ -105,15 +105,22 @@ DEFAULT_VEHICLES = [
 class Vehicle:
     """Mewakili satu armada bus dengan state penumpang yang ber-evolusi."""
 
-    def __init__(self, vehicle_id: int, plate: str, route_code: str, capacity: int):
+    def __init__(self, vehicle_id: int, plate: str, route_code: str, capacity: int,
+                 force_high: bool = False):
         self.vehicle_id = vehicle_id
         self.plate = plate
         self.route_code = route_code
         self.capacity = capacity
+        self.force_high = force_high
         # Setiap kendaraan punya offset baseline unik (±10%)
         self._baseline_offset = random.uniform(-0.10, 0.10)
-        # State awal: random load 10-40% kapasitas
-        self.passenger_count = random.randint(int(capacity * 0.1), int(capacity * 0.4))
+        # State awal: tergantung mode
+        if force_high:
+            # Mulai di 80-95% kapasitas untuk langsung trigger alert
+            self.passenger_count = random.randint(int(capacity * 0.80), int(capacity * 0.95))
+        else:
+            # State awal: random load 10-40% kapasitas
+            self.passenger_count = random.randint(int(capacity * 0.1), int(capacity * 0.4))
 
     def _rush_factor(self) -> float:
         """
@@ -129,10 +136,14 @@ class Vehicle:
     def tick(self) -> None:
         """
         Advance state by one tick. Random walk menuju target occupancy
-        berdasarkan jam.
+        berdasarkan jam (atau forced high jika --force-high).
         """
-        rush = self._rush_factor()
-        baseline = 0.20 + self._baseline_offset  # ~20% off-peak baseline
+        if self.force_high:
+            rush = 1.0  # Paksa jam sibuk
+            baseline = 0.70 + self._baseline_offset  # Tinggi terus
+        else:
+            rush = self._rush_factor()
+            baseline = 0.20 + self._baseline_offset  # ~20% off-peak baseline
         peak_max = 0.95  # mendekati penuh saat puncak
 
         target_ratio = baseline + (peak_max - baseline) * rush
@@ -354,13 +365,13 @@ def print_vehicles(vehicles: List[Vehicle]):
 # Main entry point
 # =============================================================================
 
-def build_vehicles(count: int) -> List[Vehicle]:
+def build_vehicles(count: int, force_high: bool = False) -> List[Vehicle]:
     """Build list of Vehicle instances dari DEFAULT_VEHICLES, dipotong ke count."""
     if count > len(DEFAULT_VEHICLES):
         print(f"{C.YELLOW}⚠  Diminta {count} kendaraan, hanya tersedia {len(DEFAULT_VEHICLES)}. "
               f"Memakai {len(DEFAULT_VEHICLES)}.{C.RESET}")
         count = len(DEFAULT_VEHICLES)
-    return [Vehicle(*spec) for spec in DEFAULT_VEHICLES[:count]]
+    return [Vehicle(*spec, force_high=force_high) for spec in DEFAULT_VEHICLES[:count]]
 
 
 def parse_args():
@@ -377,6 +388,8 @@ def parse_args():
                         help="Jumlah kendaraan disimulasikan (max 7, default: 5)")
     parser.add_argument("--burst", action="store_true",
                         help="Kirim sekali untuk setiap kendaraan, lalu keluar")
+    parser.add_argument("--force-high", action="store_true",
+                        help="Paksa kepadatan tinggi (85-100%%) untuk testing webhook alert")
     parser.add_argument("--no-banner", action="store_true",
                         help="Sembunyikan banner ASCII")
     return parser.parse_args()
@@ -401,7 +414,10 @@ def main():
         sys.exit(1)
 
     # Build vehicle list
-    vehicles = build_vehicles(args.vehicles)
+    vehicles = build_vehicles(args.vehicles, force_high=args.force_high)
+
+    if args.force_high:
+        print(f"\n  {C.YELLOW}⚡ MODE FORCE-HIGH: Kepadatan dipaksa 85-100% untuk testing webhook alert{C.RESET}")
 
     print_config(base_url, api_key, args.tick, len(vehicles), args.duration)
     print_vehicles(vehicles)
