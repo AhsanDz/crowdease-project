@@ -84,17 +84,17 @@ Detail lengkap ada di [`scripts/README.md`](scripts/README.md).
 
 ### Menjalankan untuk Development
 
-Buka 3 terminal:
+Buka Xampp dan Nyalakan Apache dan MySQL
+
+
+Buka 2 terminal:
 
 ```bash
-# Terminal 1: Database (Docker)
-docker-compose up mysql
-
-# Terminal 2: Backend Laravel
-cd backend
+# Terminal 1: Backend Laravel
+cd backend/laravel
 php artisan serve
 
-# Terminal 3: IoT Simulator
+# Terminal 2: IoT Simulator
 cd iot-simulator
 python simulator.py
 ```
@@ -142,7 +142,8 @@ Proyek ini dikembangkan untuk tujuan akademis. Konsep dasar diadaptasi dari pape
 
 ## Tautan Dokumentasi
 
-- [Dokumen Perancangan Perangkat Lunak](docs/DPPL_CrowdEase.docx) — formal SDD untuk submit
+- [Dokumen Perancangan Perangkat Lunak](docs\Dokumen_Perancangan_Perangkat_Lunak_TIS-Kelompok_7.docx) — formal SDD untuk submit
+- [Dokumen Testing API di Postman](docs\Dokumen_Test_Case_CrowdEase_API.docx) — formal SDD untuk submit
 - [API Contract v1.0](docs/API_CONTRACT.md) — referensi endpoint
 - [Arsitektur Sistem](docs/ARCHITECTURE.md) — penjelasan komponen
 - [Backend Setup](backend/README.md) — petunjuk install Laravel
