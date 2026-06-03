@@ -1,0 +1,922 @@
+{
+	"info": {
+		"_postman_id": "crowdease-api-testing-id",
+		"name": "CrowdEase API Testing Collection",
+		"description": "Collection untuk Integration & QA Testing CrowdEase (TI-1 s/d TI-4) mencakup Happy Path dan Negative Test.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "TI-1 · IoT Sensor Integration",
+			"item": [
+				{
+					"name": "TC-1-01 · Happy Path: Kirim data sensor valid",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key_valid}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vehicle_id\": 1,\n  \"passenger_count\": 30,\n  \"capacity_at_time\": 50,\n  \"recorded_at\": \"2026-06-03T10:00:00Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/sensors/readings",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"sensors",
+								"readings"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-1-02 · Happy Path: Smoke-test API key valid",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key_valid}}",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/sensors/check",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"sensors",
+								"check"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-1-03 · Happy Path: Occupancy level = high",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key_valid}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vehicle_id\": 1,\n  \"passenger_count\": 45,\n  \"capacity_at_time\": 50,\n  \"recorded_at\": \"2026-06-03T10:05:00Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/sensors/readings",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"sensors",
+								"readings"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-1-04 · Negative Test: Kirim tanpa header X-API-Key",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vehicle_id\": 1,\n  \"passenger_count\": 10,\n  \"capacity_at_time\": 50,\n  \"recorded_at\": \"2026-06-03T10:00:00Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/sensors/readings",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"sensors",
+								"readings"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-1-05 · Negative Test: API key salah / dicabut",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "invalid-key-xyz",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vehicle_id\": 1,\n  \"passenger_count\": 10,\n  \"capacity_at_time\": 50,\n  \"recorded_at\": \"2026-06-03T10:00:00Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/sensors/readings",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"sensors",
+								"readings"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-1-06 · Negative Test: vehicle_id tidak ada di database",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key_valid}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vehicle_id\": 99999,\n  \"passenger_count\": 10,\n  \"capacity_at_time\": 50,\n  \"recorded_at\": \"2026-06-03T10:00:00Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/sensors/readings",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"sensors",
+								"readings"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-1-07 · Negative Test: recorded_at lebih dari 5 menit ke depan",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "X-API-Key",
+								"value": "{{api_key_valid}}",
+								"type": "text"
+							},
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"vehicle_id\": 1,\n  \"passenger_count\": 10,\n  \"capacity_at_time\": 50,\n  \"recorded_at\": \"2030-01-01T00:00:00Z\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/sensors/readings",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"sensors",
+								"readings"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "TI-2 · Webhook Integration",
+			"item": [
+				{
+					"name": "TC-2-01 · Happy Path: Buat webhook baru",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Notifikasi Discord OPS\",\n  \"url\": \"https://webhook.site/test-abc\",\n  \"events\": [\"density.alert\", \"density.critical\"],\n  \"secret\": \"mysecretkey123\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/webhooks",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"webhooks"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-2-02 · Happy Path: Kirim test payload ke webhook",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/webhooks/{{active_webhook_id}}/test",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"webhooks",
+								"{{active_webhook_id}}",
+								"test"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-2-03 · Happy Path: Update URL dan event webhook",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"url\": \"https://webhook.site/updated-url\",\n  \"is_active\": false\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/webhooks/{{active_webhook_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"webhooks",
+								"{{active_webhook_id}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-2-04 · Happy Path: Hapus webhook",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/webhooks/{{active_webhook_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"webhooks",
+								"{{active_webhook_id}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-2-05 · Negative Test: Buat webhook tanpa token",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"X\",\n  \"url\": \"https://webhook.site/x\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/webhooks",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"webhooks"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-2-06 · Negative Test: URL tidak valid saat buat webhook",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"name\": \"Test\",\n  \"url\": \"bukan-url-valid\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/webhooks",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"webhooks"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-2-07 · Negative Test: Test webhook dengan ID tidak ada",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/webhooks/99999/test",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"webhooks",
+								"99999",
+								"test"
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "TI-3 · Passenger API",
+			"item": [
+				{
+					"name": "TC-3-01 · Happy Path: Health check ping",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/ping",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"ping"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-3-02 · Happy Path: Daftar semua koridor aktif",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/routes",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"routes"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-3-03 · Happy Path: Armada aktif dalam koridor + kepadatan terkini",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/routes/{{active_route_id}}/vehicles",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"routes",
+								"{{active_route_id}}",
+								"vehicles"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-3-04 · Happy Path: Riwayat kepadatan default 30 menit",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/vehicles/{{active_vehicle_id}}/density/history",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"vehicles",
+								"{{active_vehicle_id}}",
+								"density",
+								"history"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-3-05 · Negative Test: Koridor tidak ditemukan",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/routes/99999",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"routes",
+								"99999"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-3-06 · Negative Test: Parameter minutes di luar batas (999)",
+					"request": {
+						"method": "GET",
+						"header": [
+							{
+								"key": "Accept",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"url": {
+							"raw": "{{base_url}}/api/v1/vehicles/{{active_vehicle_id}}/density/history?minutes=999",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"vehicles",
+								"{{active_vehicle_id}}",
+								"density",
+								"history"
+							],
+							"query": [
+								{
+									"key": "minutes",
+									"value": "999"
+								}
+							]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "TI-4 · Admin CRUD & Backoffice",
+			"item": [
+				{
+					"name": "TC-4-01 · Happy Path: Login operator berhasil",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"operator@crowdease.test\",\n  \"password\": \"secret123\",\n  \"device_name\": \"QA Browser\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"auth",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-4-02 · Happy Path: Buat armada baru",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"route_id\": 1,\n  \"plate_number\": \"B 1234 ZZQ\",\n  \"capacity\": 80\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/vehicles",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"vehicles"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-4-03 · Happy Path: Buat koridor baru",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"1A\",\n  \"name\": \"Koridor 1A Blok M - Kota\",\n  \"color\": \"#E11D2A\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/routes",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"routes"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-4-04 · Happy Path: Hapus armada tanpa riwayat sensor",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/vehicles/{{new_vehicle_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"vehicles",
+								"{{new_vehicle_id}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-4-05 · Negative Test: Login dengan password salah",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"email\": \"operator@crowdease.test\",\n  \"password\": \"salahpassword\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/auth/login",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"auth",
+								"login"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-4-06 · Negative Test: Nomor plat duplikat",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"route_id\": 1,\n  \"plate_number\": \"B 1234 ZZQ\",\n  \"capacity\": 60\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/vehicles",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"vehicles"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-4-07 · Negative Test: Hapus armada yang punya riwayat sensor",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/vehicles/{{active_vehicle_id}}",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"vehicles",
+								"{{active_vehicle_id}}"
+							]
+						}
+					}
+				},
+				{
+					"name": "TC-4-08 · Negative Test: Warna koridor bukan format hex",
+					"request": {
+						"auth": {
+							"type": "bearer",
+							"bearer": [
+								{
+									"key": "token",
+									"value": "{{admin_token}}",
+									"type": "string"
+								}
+							]
+						},
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json",
+								"type": "text"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"code\": \"2B\",\n  \"name\": \"Koridor 2B\",\n  \"color\": \"red\"\n}"
+						},
+						"url": {
+							"raw": "{{base_url}}/api/v1/admin/routes",
+							"host": [
+								"{{base_url}}"
+							],
+							"path": [
+								"api",
+								"v1",
+								"admin",
+								"routes"
+							]
+						}
+					}
+				}
+			]
+		}
+	]
+}
